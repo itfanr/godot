@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,6 +31,7 @@
 #include "skeleton_2d_editor_plugin.h"
 
 #include "canvas_item_editor_plugin.h"
+#include "editor/editor_node.h"
 #include "scene/2d/mesh_instance_2d.h"
 #include "scene/gui/box_container.h"
 #include "thirdparty/misc/clipper.hpp"
@@ -127,10 +128,9 @@ void Skeleton2DEditorPlugin::make_visible(bool p_visible) {
 	}
 }
 
-Skeleton2DEditorPlugin::Skeleton2DEditorPlugin(EditorNode *p_node) {
-	editor = p_node;
+Skeleton2DEditorPlugin::Skeleton2DEditorPlugin() {
 	sprite_editor = memnew(Skeleton2DEditor);
-	editor->get_main_control()->add_child(sprite_editor);
+	EditorNode::get_singleton()->get_main_control()->add_child(sprite_editor);
 	make_visible(false);
 
 	//sprite_editor->options->hide();

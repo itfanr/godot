@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -1336,9 +1336,9 @@ CSGBrushOperation::Build2DFaces::Build2DFaces(const CSGBrush &p_brush, int p_fac
 
 	plane = Plane(points_3D[0], points_3D[1], points_3D[2]);
 	to_3D.origin = points_3D[0];
-	to_3D.basis.set_axis(2, plane.normal);
-	to_3D.basis.set_axis(0, (points_3D[1] - points_3D[2]).normalized());
-	to_3D.basis.set_axis(1, to_3D.basis.get_axis(0).cross(to_3D.basis.get_axis(2)).normalized());
+	to_3D.basis.set_column(2, plane.normal);
+	to_3D.basis.set_column(0, (points_3D[1] - points_3D[2]).normalized());
+	to_3D.basis.set_column(1, to_3D.basis.get_column(0).cross(to_3D.basis.get_column(2)).normalized());
 	to_2D = to_3D.affine_inverse();
 
 	Face2D face;

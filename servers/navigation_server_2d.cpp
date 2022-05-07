@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -29,13 +29,10 @@
 /*************************************************************************/
 
 #include "servers/navigation_server_2d.h"
+
 #include "core/math/transform_2d.h"
 #include "core/math/transform_3d.h"
 #include "servers/navigation_server_3d.h"
-
-/**
-	@author AndreaCatania
-*/
 
 NavigationServer2D *NavigationServer2D::singleton = nullptr;
 
@@ -141,11 +138,11 @@ static Object *obj_to_obj(Object *d) {
 	return d;
 }
 
-static StringName sn_to_sn(StringName &d) {
+static StringName sn_to_sn(const StringName &d) {
 	return d;
 }
 
-static Variant var_to_var(Variant &d) {
+static Variant var_to_var(const Variant &d) {
 	return d;
 }
 
@@ -196,7 +193,7 @@ void NavigationServer2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("agent_is_map_changed", "agent"), &NavigationServer2D::agent_is_map_changed);
 	ClassDB::bind_method(D_METHOD("agent_set_callback", "agent", "receiver", "method", "userdata"), &NavigationServer2D::agent_set_callback, DEFVAL(Variant()));
 
-	ClassDB::bind_method(D_METHOD("free", "object"), &NavigationServer2D::free);
+	ClassDB::bind_method(D_METHOD("free_rid", "rid"), &NavigationServer2D::free);
 
 	ADD_SIGNAL(MethodInfo("map_changed", PropertyInfo(Variant::RID, "map")));
 }
@@ -204,7 +201,7 @@ void NavigationServer2D::_bind_methods() {
 NavigationServer2D::NavigationServer2D() {
 	singleton = this;
 	ERR_FAIL_COND_MSG(!NavigationServer3D::get_singleton(), "The Navigation3D singleton should be initialized before the 2D one.");
-	NavigationServer3D::get_singleton()->connect("map_changed", callable_mp(this, &NavigationServer2D::_emit_map_changed));
+	NavigationServer3D::get_singleton_mut()->connect("map_changed", callable_mp(this, &NavigationServer2D::_emit_map_changed));
 }
 
 NavigationServer2D::~NavigationServer2D() {

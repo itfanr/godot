@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -29,7 +29,9 @@
 /*************************************************************************/
 
 #include "audio_effect_stereo_enhance.h"
+
 #include "servers/audio_server.h"
+
 void AudioEffectStereoEnhanceInstance::process(const AudioFrame *p_src_frames, AudioFrame *p_dst_frames, int p_frame_count) {
 	float intensity = base->pan_pullout;
 	bool surround_mode = base->surround > 0;
@@ -61,7 +63,6 @@ void AudioEffectStereoEnhanceInstance::process(const AudioFrame *p_src_frames, A
 
 			//r is delayed
 			r = delay_ringbuff[(ringbuff_pos - delay_frames) & ringbuff_mask];
-			;
 		}
 
 		p_dst_frames[i].l = l;
@@ -141,8 +142,4 @@ void AudioEffectStereoEnhance::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "surround", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_surround", "get_surround");
 }
 
-AudioEffectStereoEnhance::AudioEffectStereoEnhance() {
-	pan_pullout = 1;
-	time_pullout = 0;
-	surround = 0;
-}
+AudioEffectStereoEnhance::AudioEffectStereoEnhance() {}

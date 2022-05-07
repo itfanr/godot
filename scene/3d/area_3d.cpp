@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -175,7 +175,7 @@ void Area3D::_initialize_wind() {
 		Node3D *p_wind_source = Object::cast_to<Node3D>(get_node(wind_source_path));
 		ERR_FAIL_NULL(p_wind_source);
 		Transform3D global_transform = p_wind_source->get_transform();
-		wind_direction = -global_transform.basis.get_axis(Vector3::AXIS_Z).normalized();
+		wind_direction = -global_transform.basis.get_column(Vector3::AXIS_Z).normalized();
 		wind_source = global_transform.origin;
 		temp_magnitude = wind_force_magnitude;
 	}
@@ -344,10 +344,14 @@ void Area3D::_clear_monitoring() {
 }
 
 void Area3D::_notification(int p_what) {
-	if (p_what == NOTIFICATION_EXIT_TREE) {
-		_clear_monitoring();
-	} else if (p_what == NOTIFICATION_ENTER_TREE) {
-		_initialize_wind();
+	switch (p_what) {
+		case NOTIFICATION_EXIT_TREE: {
+			_clear_monitoring();
+		} break;
+
+		case NOTIFICATION_ENTER_TREE: {
+			_initialize_wind();
+		} break;
 	}
 }
 

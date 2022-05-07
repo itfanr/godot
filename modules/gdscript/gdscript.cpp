@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -43,10 +43,15 @@
 #include "gdscript_cache.h"
 #include "gdscript_compiler.h"
 #include "gdscript_parser.h"
+#include "gdscript_rpc_callable.h"
 #include "gdscript_warning.h"
 
 #ifdef TESTS_ENABLED
 #include "tests/gdscript_test_runner.h"
+#endif
+
+#ifdef TOOLS_ENABLED
+#include "editor/editor_settings.h"
 #endif
 
 ///////////////////////////
@@ -77,7 +82,7 @@ Variant GDScriptNativeClass::_new() {
 
 	RefCounted *rc = Object::cast_to<RefCounted>(o);
 	if (rc) {
-		return REF(rc);
+		return Ref<RefCounted>(rc);
 	} else {
 		return o;
 	}
@@ -85,6 +90,21 @@ Variant GDScriptNativeClass::_new() {
 
 Object *GDScriptNativeClass::instantiate() {
 	return ClassDB::instantiate(name);
+}
+
+Variant GDScriptNativeClass::callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
+	if (p_method == SNAME("new")) {
+		// Constructor.
+		return Object::callp(p_method, p_args, p_argcount, r_error);
+	}
+	MethodBind *method = ClassDB::get_method(name, p_method);
+	if (method) {
+		// Native static method.
+		return method->call(nullptr, p_args, p_argcount, r_error);
+	}
+
+	r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
+	return Variant();
 }
 
 GDScriptFunction *GDScript::_super_constructor(GDScript *p_script) {
@@ -175,7 +195,7 @@ Variant GDScript::_new(const Variant **p_args, int p_argcount, Callable::CallErr
 	}
 
 	r_error.error = Callable::CallError::CALL_OK;
-	REF ref;
+	Ref<RefCounted> ref;
 	Object *owner = nullptr;
 
 	GDScript *_baseptr = this;
@@ -193,7 +213,7 @@ Variant GDScript::_new(const Variant **p_args, int p_argcount, Callable::CallErr
 
 	RefCounted *r = Object::cast_to<RefCounted>(owner);
 	if (r) {
-		ref = REF(r);
+		ref = Ref<RefCounted>(r);
 	}
 
 	GDScriptInstance *instance = _create_instance(p_args, p_argcount, owner, r != nullptr, r_error);
@@ -791,7 +811,7 @@ void GDScript::_set_subclass_path(Ref<GDScript> &p_sc, const String &p_path) {
 
 String GDScript::_get_debug_path() const {
 	if (is_built_in() && !get_name().is_empty()) {
-		return get_name() + " (" + get_path().get_slice("::", 0) + ")";
+		return get_name() + " (" + get_path() + ")";
 	} else {
 		return get_path();
 	}
@@ -817,10 +837,12 @@ Error GDScript::reload(bool p_keep_state) {
 		basedir = basedir.get_base_dir();
 	}
 
-	if (source.find("%BASE%") != -1) {
-		//loading a template, don't parse
+// Loading a template, don't parse.
+#ifdef TOOLS_ENABLED
+	if (EditorSettings::get_singleton() && basedir.begins_with(EditorSettings::get_singleton()->get_project_script_templates_dir())) {
 		return OK;
 	}
+#endif
 
 	{
 		String source_path = path;
@@ -927,7 +949,7 @@ const Vector<Multiplayer::RPCConfig> GDScript::get_rpc_methods() const {
 	return rpc_functions;
 }
 
-Variant GDScript::call(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
+Variant GDScript::callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
 	GDScript *top = this;
 	while (top) {
 		Map<StringName, GDScriptFunction *>::Element *E = top->member_functions.find(p_method);
@@ -941,7 +963,7 @@ Variant GDScript::call(const StringName &p_method, const Variant **p_args, int p
 
 	//none found, regular
 
-	return Script::call(p_method, p_args, p_argcount, r_error);
+	return Script::callp(p_method, p_args, p_argcount, r_error);
 }
 
 bool GDScript::_get(const StringName &p_name, Variant &r_ret) const {
@@ -1008,17 +1030,21 @@ Error GDScript::load_byte_code(const String &p_path) {
 Error GDScript::load_source_code(const String &p_path) {
 	Vector<uint8_t> sourcef;
 	Error err;
-	FileAccess *f = FileAccess::open(p_path, FileAccess::READ, &err);
+	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::READ, &err);
 	if (err) {
-		ERR_FAIL_COND_V(err, err);
+		const char *err_name;
+		if (err < 0 || err >= ERR_MAX) {
+			err_name = "(invalid error code)";
+		} else {
+			err_name = error_names[err];
+		}
+		ERR_FAIL_COND_V_MSG(err, err, "Attempt to open script '" + p_path + "' resulted in error '" + err_name + "'.");
 	}
 
 	uint64_t len = f->get_length();
 	sourcef.resize(len + 1);
 	uint8_t *w = sourcef.ptrw();
 	uint64_t r = f->get_buffer(w, len);
-	f->close();
-	memdelete(f);
 	ERR_FAIL_COND_V(r != len, ERR_CANT_OPEN);
 	w[len] = 0;
 
@@ -1262,7 +1288,7 @@ bool GDScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 			if (member->setter) {
 				const Variant *val = &p_value;
 				Callable::CallError err;
-				call(member->setter, &val, 1, err);
+				callp(member->setter, &val, 1, err);
 				if (err.error == Callable::CallError::CALL_OK) {
 					return true; //function exists, call was successful
 				} else {
@@ -1324,7 +1350,7 @@ bool GDScriptInstance::get(const StringName &p_name, Variant &r_ret) const {
 			if (E) {
 				if (E->get().getter) {
 					Callable::CallError err;
-					r_ret = const_cast<GDScriptInstance *>(this)->call(E->get().getter, nullptr, 0, err);
+					r_ret = const_cast<GDScriptInstance *>(this)->callp(E->get().getter, nullptr, 0, err);
 					if (err.error == Callable::CallError::CALL_OK) {
 						return true;
 					}
@@ -1365,7 +1391,13 @@ bool GDScriptInstance::get(const StringName &p_name, Variant &r_ret) const {
 			while (sl) {
 				const Map<StringName, GDScriptFunction *>::Element *E = sl->member_functions.find(p_name);
 				if (E) {
-					r_ret = Callable(this->owner, E->key());
+					Multiplayer::RPCConfig config;
+					config.name = p_name;
+					if (sptr->rpc_functions.find(config) != -1) {
+						r_ret = Callable(memnew(GDScriptRPCCallable(this->owner, E->key())));
+					} else {
+						r_ret = Callable(this->owner, E->key());
+					}
 					return true; //index found
 				}
 				sl = sl->_base;
@@ -1503,7 +1535,7 @@ bool GDScriptInstance::has_method(const StringName &p_method) const {
 	return false;
 }
 
-Variant GDScriptInstance::call(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
+Variant GDScriptInstance::callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
 	GDScript *sptr = script.ptr();
 	while (sptr) {
 		Map<StringName, GDScriptFunction *>::Element *E = sptr->member_functions.find(p_method);
@@ -1538,7 +1570,7 @@ void GDScriptInstance::notification(int p_notification) {
 String GDScriptInstance::to_string(bool *r_valid) {
 	if (has_method(CoreStringNames::get_singleton()->_to_string)) {
 		Callable::CallError ce;
-		Variant ret = call(CoreStringNames::get_singleton()->_to_string, nullptr, 0, ce);
+		Variant ret = callp(CoreStringNames::get_singleton()->_to_string, nullptr, 0, ce);
 		if (ce.error == Callable::CallError::CALL_OK) {
 			if (ret.get_type() != Variant::STRING) {
 				if (r_valid) {
@@ -2012,8 +2044,6 @@ void GDScriptLanguage::get_reserved_words(List<String> *p_words) const {
 		"preload",
 		"signal",
 		"super",
-		"trait",
-		"yield",
 		// var
 		"const",
 		"enum",
@@ -2030,6 +2060,11 @@ void GDScriptLanguage::get_reserved_words(List<String> *p_words) const {
 		"return",
 		"match",
 		"while",
+		// These keywords are not implemented currently, but reserved for (potential) future use.
+		// We highlight them as keywords to make errors easier to understand.
+		"trait",
+		"namespace",
+		"yield",
 		nullptr
 	};
 
@@ -2068,7 +2103,7 @@ bool GDScriptLanguage::handles_global_class_type(const String &p_type) const {
 String GDScriptLanguage::get_global_class_name(const String &p_path, String *r_base_type, String *r_icon_path) const {
 	Vector<uint8_t> sourcef;
 	Error err;
-	FileAccessRef f = FileAccess::open(p_path, FileAccess::READ, &err);
+	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::READ, &err);
 	if (err) {
 		return String();
 	}
@@ -2102,8 +2137,8 @@ String GDScriptLanguage::get_global_class_name(const String &p_path, String *r_b
 						} else {
 							Vector<StringName> extend_classes = subclass->extends;
 
-							FileAccessRef subfile = FileAccess::open(subclass->extends_path, FileAccess::READ);
-							if (!subfile) {
+							Ref<FileAccess> subfile = FileAccess::open(subclass->extends_path, FileAccess::READ);
+							if (subfile.is_null()) {
 								break;
 							}
 							String subsource = subfile->get_as_utf8_string();
@@ -2196,7 +2231,6 @@ GDScriptLanguage::GDScriptLanguage() {
 	GLOBAL_DEF("debug/gdscript/warnings/enable", true);
 	GLOBAL_DEF("debug/gdscript/warnings/treat_warnings_as_errors", false);
 	GLOBAL_DEF("debug/gdscript/warnings/exclude_addons", true);
-	GLOBAL_DEF("debug/gdscript/completion/autocomplete_setters_and_getters", false);
 	for (int i = 0; i < (int)GDScriptWarning::WARNING_MAX; i++) {
 		String warning = GDScriptWarning::get_name_from_code((GDScriptWarning::Code)i).to_lower();
 		bool default_enabled = !warning.begins_with("unsafe_");
@@ -2258,7 +2292,7 @@ Ref<GDScript> GDScriptLanguage::get_orphan_subclass(const String &p_qualified_na
 
 /*************** RESOURCE ***************/
 
-RES ResourceFormatLoaderGDScript::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads, float *r_progress, CacheMode p_cache_mode) {
+Ref<Resource> ResourceFormatLoaderGDScript::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads, float *r_progress, CacheMode p_cache_mode) {
 	if (r_error) {
 		*r_error = ERR_FILE_CANT_OPEN;
 	}
@@ -2301,8 +2335,8 @@ String ResourceFormatLoaderGDScript::get_resource_type(const String &p_path) con
 }
 
 void ResourceFormatLoaderGDScript::get_dependencies(const String &p_path, List<String> *p_dependencies, bool p_add_types) {
-	FileAccessRef file = FileAccess::open(p_path, FileAccess::READ);
-	ERR_FAIL_COND_MSG(!file, "Cannot open file '" + p_path + "'.");
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ);
+	ERR_FAIL_COND_MSG(file.is_null(), "Cannot open file '" + p_path + "'.");
 
 	String source = file->get_as_utf8_string();
 	if (source.is_empty()) {
@@ -2319,24 +2353,23 @@ void ResourceFormatLoaderGDScript::get_dependencies(const String &p_path, List<S
 	}
 }
 
-Error ResourceFormatSaverGDScript::save(const String &p_path, const RES &p_resource, uint32_t p_flags) {
+Error ResourceFormatSaverGDScript::save(const String &p_path, const Ref<Resource> &p_resource, uint32_t p_flags) {
 	Ref<GDScript> sqscr = p_resource;
 	ERR_FAIL_COND_V(sqscr.is_null(), ERR_INVALID_PARAMETER);
 
 	String source = sqscr->get_source_code();
 
-	Error err;
-	FileAccess *file = FileAccess::open(p_path, FileAccess::WRITE, &err);
+	{
+		Error err;
+		Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &err);
 
-	ERR_FAIL_COND_V_MSG(err, err, "Cannot save GDScript file '" + p_path + "'.");
+		ERR_FAIL_COND_V_MSG(err, err, "Cannot save GDScript file '" + p_path + "'.");
 
-	file->store_string(source);
-	if (file->get_error() != OK && file->get_error() != ERR_FILE_EOF) {
-		memdelete(file);
-		return ERR_CANT_CREATE;
+		file->store_string(source);
+		if (file->get_error() != OK && file->get_error() != ERR_FILE_EOF) {
+			return ERR_CANT_CREATE;
+		}
 	}
-	file->close();
-	memdelete(file);
 
 	if (ScriptServer::is_reload_scripts_on_save_enabled()) {
 		GDScriptLanguage::get_singleton()->reload_tool_script(p_resource, false);
@@ -2345,12 +2378,12 @@ Error ResourceFormatSaverGDScript::save(const String &p_path, const RES &p_resou
 	return OK;
 }
 
-void ResourceFormatSaverGDScript::get_recognized_extensions(const RES &p_resource, List<String> *p_extensions) const {
+void ResourceFormatSaverGDScript::get_recognized_extensions(const Ref<Resource> &p_resource, List<String> *p_extensions) const {
 	if (Object::cast_to<GDScript>(*p_resource)) {
 		p_extensions->push_back("gd");
 	}
 }
 
-bool ResourceFormatSaverGDScript::recognize(const RES &p_resource) const {
+bool ResourceFormatSaverGDScript::recognize(const Ref<Resource> &p_resource) const {
 	return Object::cast_to<GDScript>(*p_resource) != nullptr;
 }

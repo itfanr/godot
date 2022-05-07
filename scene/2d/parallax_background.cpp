@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -29,6 +29,7 @@
 /*************************************************************************/
 
 #include "parallax_background.h"
+
 #include "parallax_layer.h"
 
 void ParallaxBackground::_notification(int p_what) {
@@ -36,8 +37,8 @@ void ParallaxBackground::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			group_name = "__cameras_" + itos(get_viewport().get_id());
 			add_to_group(group_name);
-
 		} break;
+
 		case NOTIFICATION_EXIT_TREE: {
 			remove_from_group(group_name);
 		} break;
@@ -162,15 +163,15 @@ Vector2 ParallaxBackground::get_final_offset() const {
 
 void ParallaxBackground::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_camera_moved"), &ParallaxBackground::_camera_moved);
-	ClassDB::bind_method(D_METHOD("set_scroll_offset", "ofs"), &ParallaxBackground::set_scroll_offset);
+	ClassDB::bind_method(D_METHOD("set_scroll_offset", "offset"), &ParallaxBackground::set_scroll_offset);
 	ClassDB::bind_method(D_METHOD("get_scroll_offset"), &ParallaxBackground::get_scroll_offset);
-	ClassDB::bind_method(D_METHOD("set_scroll_base_offset", "ofs"), &ParallaxBackground::set_scroll_base_offset);
+	ClassDB::bind_method(D_METHOD("set_scroll_base_offset", "offset"), &ParallaxBackground::set_scroll_base_offset);
 	ClassDB::bind_method(D_METHOD("get_scroll_base_offset"), &ParallaxBackground::get_scroll_base_offset);
 	ClassDB::bind_method(D_METHOD("set_scroll_base_scale", "scale"), &ParallaxBackground::set_scroll_base_scale);
 	ClassDB::bind_method(D_METHOD("get_scroll_base_scale"), &ParallaxBackground::get_scroll_base_scale);
-	ClassDB::bind_method(D_METHOD("set_limit_begin", "ofs"), &ParallaxBackground::set_limit_begin);
+	ClassDB::bind_method(D_METHOD("set_limit_begin", "offset"), &ParallaxBackground::set_limit_begin);
 	ClassDB::bind_method(D_METHOD("get_limit_begin"), &ParallaxBackground::get_limit_begin);
-	ClassDB::bind_method(D_METHOD("set_limit_end", "ofs"), &ParallaxBackground::set_limit_end);
+	ClassDB::bind_method(D_METHOD("set_limit_end", "offset"), &ParallaxBackground::set_limit_end);
 	ClassDB::bind_method(D_METHOD("get_limit_end"), &ParallaxBackground::get_limit_end);
 	ClassDB::bind_method(D_METHOD("set_ignore_camera_zoom", "ignore"), &ParallaxBackground::set_ignore_camera_zoom);
 	ClassDB::bind_method(D_METHOD("is_ignore_camera_zoom"), &ParallaxBackground::is_ignore_camera_zoom);

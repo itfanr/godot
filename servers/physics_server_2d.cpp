@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -243,7 +243,7 @@ void PhysicsPointQueryParameters2D::_bind_methods() {
 
 ///////////////////////////////////////////////////////
 
-void PhysicsShapeQueryParameters2D::set_shape(const RES &p_shape_ref) {
+void PhysicsShapeQueryParameters2D::set_shape(const Ref<Resource> &p_shape_ref) {
 	ERR_FAIL_COND(p_shape_ref.is_null());
 	shape_ref = p_shape_ref;
 	parameters.shape_rid = p_shape_ref->get_rid();
@@ -251,7 +251,7 @@ void PhysicsShapeQueryParameters2D::set_shape(const RES &p_shape_ref) {
 
 void PhysicsShapeQueryParameters2D::set_shape_rid(const RID &p_shape) {
 	if (parameters.shape_rid != p_shape) {
-		shape_ref = RES();
+		shape_ref = Ref<Resource>();
 		parameters.shape_rid = p_shape;
 	}
 }
@@ -336,6 +336,8 @@ Dictionary PhysicsDirectSpaceState2D::_intersect_ray(const Ref<PhysicsRayQueryPa
 }
 
 Array PhysicsDirectSpaceState2D::_intersect_point(const Ref<PhysicsPointQueryParameters2D> &p_point_query, int p_max_results) {
+	ERR_FAIL_COND_V(p_point_query.is_null(), Array());
+
 	Vector<ShapeResult> ret;
 	ret.resize(p_max_results);
 

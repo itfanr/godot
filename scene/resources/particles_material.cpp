@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -190,6 +190,9 @@ void ParticlesMaterial::_update_shader() {
 		case EMISSION_SHAPE_SPHERE: {
 			code += "uniform float emission_sphere_radius;\n";
 		} break;
+		case EMISSION_SHAPE_SPHERE_SURFACE: {
+			code += "uniform float emission_sphere_radius;\n";
+		} break;
 		case EMISSION_SHAPE_BOX: {
 			code += "uniform vec3 emission_box_extents;\n";
 		} break;
@@ -230,48 +233,48 @@ void ParticlesMaterial::_update_shader() {
 	code += "uniform vec3 gravity;\n";
 
 	if (color_ramp.is_valid()) {
-		code += "uniform sampler2D color_ramp;\n";
+		code += "uniform sampler2D color_ramp : repeat_disable;\n";
 	}
 
 	if (color_initial_ramp.is_valid()) {
-		code += "uniform sampler2D color_initial_ramp;\n";
+		code += "uniform sampler2D color_initial_ramp : repeat_disable;\n";
 	}
 
 	if (tex_parameters[PARAM_INITIAL_LINEAR_VELOCITY].is_valid()) {
-		code += "uniform sampler2D linear_velocity_texture;\n";
+		code += "uniform sampler2D linear_velocity_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_ORBIT_VELOCITY].is_valid()) {
-		code += "uniform sampler2D orbit_velocity_texture;\n";
+		code += "uniform sampler2D orbit_velocity_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_ANGULAR_VELOCITY].is_valid()) {
-		code += "uniform sampler2D angular_velocity_texture;\n";
+		code += "uniform sampler2D angular_velocity_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_LINEAR_ACCEL].is_valid()) {
-		code += "uniform sampler2D linear_accel_texture;\n";
+		code += "uniform sampler2D linear_accel_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_RADIAL_ACCEL].is_valid()) {
-		code += "uniform sampler2D radial_accel_texture;\n";
+		code += "uniform sampler2D radial_accel_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_TANGENTIAL_ACCEL].is_valid()) {
-		code += "uniform sampler2D tangent_accel_texture;\n";
+		code += "uniform sampler2D tangent_accel_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_DAMPING].is_valid()) {
-		code += "uniform sampler2D damping_texture;\n";
+		code += "uniform sampler2D damping_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_ANGLE].is_valid()) {
-		code += "uniform sampler2D angle_texture;\n";
+		code += "uniform sampler2D angle_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_SCALE].is_valid()) {
-		code += "uniform sampler2D scale_texture;\n";
+		code += "uniform sampler2D scale_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_HUE_VARIATION].is_valid()) {
-		code += "uniform sampler2D hue_variation_texture;\n";
+		code += "uniform sampler2D hue_variation_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_ANIM_SPEED].is_valid()) {
-		code += "uniform sampler2D anim_speed_texture;\n";
+		code += "uniform sampler2D anim_speed_texture : repeat_disable;\n";
 	}
 	if (tex_parameters[PARAM_ANIM_OFFSET].is_valid()) {
-		code += "uniform sampler2D anim_offset_texture;\n";
+		code += "uniform sampler2D anim_offset_texture : repeat_disable;\n";
 	}
 
 	if (collision_enabled) {
@@ -396,6 +399,13 @@ void ParticlesMaterial::_update_shader() {
 			code += "		TRANSFORM = mat4(vec4(1,0,0,0),vec4(0,1,0,0),vec4(0,0,1,0),vec4(0,0,0,1));\n";
 		} break;
 		case EMISSION_SHAPE_SPHERE: {
+			code += "		float s = rand_from_seed(alt_seed) * 2.0 - 1.0;\n";
+			code += "		float t = rand_from_seed(alt_seed) * 2.0 * pi;\n";
+			code += "		float p = rand_from_seed(alt_seed);\n";
+			code += "		float radius = emission_sphere_radius * sqrt(1.0 - s * s);\n";
+			code += "		TRANSFORM[3].xyz = mix(vec3(0.0, 0.0, 0.0), vec3(radius * cos(t), radius * sin(t), emission_sphere_radius * s), p);\n";
+		} break;
+		case EMISSION_SHAPE_SPHERE_SURFACE: {
 			code += "		float s = rand_from_seed(alt_seed) * 2.0 - 1.0;\n";
 			code += "		float t = rand_from_seed(alt_seed) * 2.0 * pi;\n";
 			code += "		float radius = emission_sphere_radius * sqrt(1.0 - s * s);\n";
@@ -1165,7 +1175,7 @@ RID ParticlesMaterial::get_shader_rid() const {
 }
 
 void ParticlesMaterial::_validate_property(PropertyInfo &property) const {
-	if (property.name == "emission_sphere_radius" && emission_shape != EMISSION_SHAPE_SPHERE) {
+	if (property.name == "emission_sphere_radius" && (emission_shape != EMISSION_SHAPE_SPHERE && emission_shape != EMISSION_SHAPE_SPHERE_SURFACE)) {
 		property.usage = PROPERTY_USAGE_NONE;
 	}
 
@@ -1388,7 +1398,7 @@ void ParticlesMaterial::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lifetime_randomness", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_lifetime_randomness", "get_lifetime_randomness");
 
 	ADD_GROUP("Emission Shape", "emission_");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "emission_shape", PROPERTY_HINT_ENUM, "Point,Sphere,Box,Points,Directed Points,Ring"), "set_emission_shape", "get_emission_shape");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "emission_shape", PROPERTY_HINT_ENUM, "Point,Sphere,Sphere Surface,Box,Points,Directed Points,Ring"), "set_emission_shape", "get_emission_shape");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "emission_sphere_radius", PROPERTY_HINT_RANGE, "0.01,128,0.01,or_greater"), "set_emission_sphere_radius", "get_emission_sphere_radius");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "emission_box_extents"), "set_emission_box_extents", "get_emission_box_extents");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "emission_point_texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D"), "set_emission_point_texture", "get_emission_point_texture");
@@ -1496,6 +1506,7 @@ void ParticlesMaterial::_bind_methods() {
 
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_POINT);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_SPHERE);
+	BIND_ENUM_CONSTANT(EMISSION_SHAPE_SPHERE_SURFACE);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_BOX);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_POINTS);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_DIRECTED_POINTS);

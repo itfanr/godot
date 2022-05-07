@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -930,8 +930,9 @@ void VisualScript::get_script_property_list(List<PropertyInfo> *p_list) const {
 	get_variable_list(&vars);
 
 	for (const StringName &E : vars) {
-		//if (!variables[E]._export)
-		//	continue;
+		if (!variables[E]._export) {
+			continue;
+		}
 		PropertyInfo pi = variables[E].info;
 		pi.usage |= PROPERTY_USAGE_SCRIPT_VARIABLE;
 		p_list->push_back(pi);
@@ -1120,7 +1121,7 @@ void VisualScript::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("has_function", "name"), &VisualScript::has_function);
 	ClassDB::bind_method(D_METHOD("remove_function", "name"), &VisualScript::remove_function);
 	ClassDB::bind_method(D_METHOD("rename_function", "name", "new_name"), &VisualScript::rename_function);
-	ClassDB::bind_method(D_METHOD("set_scroll", "ofs"), &VisualScript::set_scroll);
+	ClassDB::bind_method(D_METHOD("set_scroll", "offset"), &VisualScript::set_scroll);
 	ClassDB::bind_method(D_METHOD("get_scroll"), &VisualScript::get_scroll);
 
 	ClassDB::bind_method(D_METHOD("add_node", "id", "node", "position"), &VisualScript::add_node, DEFVAL(Point2()));
@@ -1163,9 +1164,6 @@ void VisualScript::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("custom_signal_swap_argument", "name", "argidx", "withidx"), &VisualScript::custom_signal_swap_argument);
 	ClassDB::bind_method(D_METHOD("remove_custom_signal", "name"), &VisualScript::remove_custom_signal);
 	ClassDB::bind_method(D_METHOD("rename_custom_signal", "name", "new_name"), &VisualScript::rename_custom_signal);
-
-	//ClassDB::bind_method(D_METHOD("set_variable_info","name","info"),&VScript::set_variable_info);
-	//ClassDB::bind_method(D_METHOD("get_variable_info","name"),&VScript::set_variable_info);
 
 	ClassDB::bind_method(D_METHOD("set_instance_base_type", "type"), &VisualScript::set_instance_base_type);
 
@@ -1710,7 +1708,7 @@ Variant VisualScriptInstance::_call_internal(const StringName &p_method, void *p
 	return return_value;
 }
 
-Variant VisualScriptInstance::call(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
+Variant VisualScriptInstance::callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
 	r_error.error = Callable::CallError::CALL_OK; //ok by default
 
 	Map<StringName, Function>::Element *F = functions.find(p_method);
@@ -1803,13 +1801,13 @@ void VisualScriptInstance::notification(int p_notification) {
 	Variant what = p_notification;
 	const Variant *whatp = &what;
 	Callable::CallError ce;
-	call(VisualScriptLanguage::singleton->notification, &whatp, 1, ce); // Do as call.
+	callp(VisualScriptLanguage::singleton->notification, &whatp, 1, ce); // Do as call.
 }
 
 String VisualScriptInstance::to_string(bool *r_valid) {
 	if (has_method(CoreStringNames::get_singleton()->_to_string)) {
 		Callable::CallError ce;
-		Variant ret = call(CoreStringNames::get_singleton()->_to_string, nullptr, 0, ce);
+		Variant ret = callp(CoreStringNames::get_singleton()->_to_string, nullptr, 0, ce);
 		if (ce.error == Callable::CallError::CALL_OK) {
 			if (ret.get_type() != Variant::STRING) {
 				if (r_valid) {
@@ -2241,20 +2239,15 @@ void VisualScriptLanguage::get_comment_delimiters(List<String> *p_delimiters) co
 void VisualScriptLanguage::get_string_delimiters(List<String> *p_delimiters) const {
 }
 
-Ref<Script> VisualScriptLanguage::get_template(const String &p_class_name, const String &p_base_class_name) const {
+bool VisualScriptLanguage::is_using_templates() {
+	return false;
+}
+
+Ref<Script> VisualScriptLanguage::make_template(const String &p_template, const String &p_class_name, const String &p_base_class_name) const {
 	Ref<VisualScript> script;
 	script.instantiate();
 	script->set_instance_base_type(p_base_class_name);
 	return script;
-}
-
-bool VisualScriptLanguage::is_using_templates() {
-	return true;
-}
-
-void VisualScriptLanguage::make_template(const String &p_class_name, const String &p_base_class_name, Ref<Script> &p_script) {
-	Ref<VisualScript> script = p_script;
-	script->set_instance_base_type(p_base_class_name);
 }
 
 bool VisualScriptLanguage::validate(const String &p_script, const String &p_path, List<String> *r_functions, List<ScriptLanguage::ScriptError> *r_errors, List<ScriptLanguage::Warning> *r_warnings, Set<int> *r_safe_lines) const {

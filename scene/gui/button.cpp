@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -53,7 +53,7 @@ Size2 Button::get_minimum_size() const {
 			if (icon_alignment != HORIZONTAL_ALIGNMENT_CENTER) {
 				minsize.width += _icon->get_width();
 				if (!xl_text.is_empty()) {
-					minsize.width += get_theme_constant(SNAME("hseparation"));
+					minsize.width += get_theme_constant(SNAME("h_separation"));
 				}
 			} else {
 				minsize.width = MAX(minsize.width, _icon->get_width());
@@ -78,6 +78,7 @@ void Button::_notification(int p_what) {
 		case NOTIFICATION_LAYOUT_DIRECTION_CHANGED: {
 			update();
 		} break;
+
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			xl_text = atr(text);
 			_shape();
@@ -85,12 +86,14 @@ void Button::_notification(int p_what) {
 			update_minimum_size();
 			update();
 		} break;
+
 		case NOTIFICATION_THEME_CHANGED: {
 			_shape();
 
 			update_minimum_size();
 			update();
 		} break;
+
 		case NOTIFICATION_DRAW: {
 			RID ci = get_canvas_item();
 			Size2 size = get_size();
@@ -126,7 +129,8 @@ void Button::_notification(int p_what) {
 					}
 				} break;
 				case DRAW_HOVER_PRESSED: {
-					if (has_theme_stylebox(SNAME("hover_pressed")) && has_theme_stylebox_override("hover_pressed")) {
+					// Edge case for CheckButton and CheckBox.
+					if (has_theme_stylebox("hover_pressed")) {
 						if (rtl && has_theme_stylebox(SNAME("hover_pressed_mirrored"))) {
 							style = get_theme_stylebox(SNAME("hover_pressed_mirrored"));
 						} else {
@@ -138,8 +142,6 @@ void Button::_notification(int p_what) {
 						}
 						if (has_theme_color(SNAME("font_hover_pressed_color"))) {
 							color = get_theme_color(SNAME("font_hover_pressed_color"));
-						} else {
-							color = get_theme_color(SNAME("font_color"));
 						}
 						if (has_theme_color(SNAME("icon_hover_pressed_color"))) {
 							color_icon = get_theme_color(SNAME("icon_hover_pressed_color"));
@@ -198,6 +200,8 @@ void Button::_notification(int p_what) {
 					color = get_theme_color(SNAME("font_disabled_color"));
 					if (has_theme_color(SNAME("icon_disabled_color"))) {
 						color_icon = get_theme_color(SNAME("icon_disabled_color"));
+					} else {
+						color_icon.a = 0.4;
 					}
 
 				} break;
@@ -233,9 +237,6 @@ void Button::_notification(int p_what) {
 			}
 			if (!_icon.is_null()) {
 				int valign = size.height - style->get_minimum_size().y;
-				if (is_disabled()) {
-					color_icon.a = 0.4;
-				}
 
 				float icon_ofs_region = 0.0;
 				Point2 style_offset;
@@ -243,21 +244,21 @@ void Button::_notification(int p_what) {
 				if (icon_align_rtl_checked == HORIZONTAL_ALIGNMENT_LEFT) {
 					style_offset.x = style->get_margin(SIDE_LEFT);
 					if (_internal_margin[SIDE_LEFT] > 0) {
-						icon_ofs_region = _internal_margin[SIDE_LEFT] + get_theme_constant(SNAME("hseparation"));
+						icon_ofs_region = _internal_margin[SIDE_LEFT] + get_theme_constant(SNAME("h_separation"));
 					}
 				} else if (icon_align_rtl_checked == HORIZONTAL_ALIGNMENT_CENTER) {
 					style_offset.x = 0.0;
 				} else if (icon_align_rtl_checked == HORIZONTAL_ALIGNMENT_RIGHT) {
 					style_offset.x = -style->get_margin(SIDE_RIGHT);
 					if (_internal_margin[SIDE_RIGHT] > 0) {
-						icon_ofs_region = -_internal_margin[SIDE_RIGHT] - get_theme_constant(SNAME("hseparation"));
+						icon_ofs_region = -_internal_margin[SIDE_RIGHT] - get_theme_constant(SNAME("h_separation"));
 					}
 				}
 				style_offset.y = style->get_margin(SIDE_TOP);
 
 				if (expand_icon) {
 					Size2 _size = get_size() - style->get_offset() * 2;
-					_size.width -= get_theme_constant(SNAME("hseparation")) + icon_ofs_region;
+					_size.width -= get_theme_constant(SNAME("h_separation")) + icon_ofs_region;
 					if (!clip_text && icon_align_rtl_checked != HORIZONTAL_ALIGNMENT_CENTER) {
 						_size.width -= text_buf->get_size().width;
 					}
@@ -285,24 +286,26 @@ void Button::_notification(int p_what) {
 				}
 			}
 
-			Point2 icon_ofs = !_icon.is_null() ? Point2(icon_region.size.width + get_theme_constant(SNAME("hseparation")), 0) : Point2();
+			Point2 icon_ofs = !_icon.is_null() ? Point2(icon_region.size.width + get_theme_constant(SNAME("h_separation")), 0) : Point2();
 			if (align_rtl_checked == HORIZONTAL_ALIGNMENT_CENTER && icon_align_rtl_checked == HORIZONTAL_ALIGNMENT_CENTER) {
 				icon_ofs.x = 0.0;
 			}
 			int text_clip = size.width - style->get_minimum_size().width - icon_ofs.width;
 			text_buf->set_width(clip_text ? text_clip : -1);
 
-			int text_width = clip_text ? MIN(text_clip, text_buf->get_size().x) : text_buf->get_size().x;
+			int text_width = MAX(1, clip_text ? MIN(text_clip, text_buf->get_size().x) : text_buf->get_size().x);
 
 			if (_internal_margin[SIDE_LEFT] > 0) {
-				text_clip -= _internal_margin[SIDE_LEFT] + get_theme_constant(SNAME("hseparation"));
+				text_clip -= _internal_margin[SIDE_LEFT] + get_theme_constant(SNAME("h_separation"));
 			}
 			if (_internal_margin[SIDE_RIGHT] > 0) {
-				text_clip -= _internal_margin[SIDE_RIGHT] + get_theme_constant(SNAME("hseparation"));
+				text_clip -= _internal_margin[SIDE_RIGHT] + get_theme_constant(SNAME("h_separation"));
 			}
 
 			Point2 text_ofs = (size - style->get_minimum_size() - icon_ofs - text_buf->get_size() - Point2(_internal_margin[SIDE_RIGHT] - _internal_margin[SIDE_LEFT], 0)) / 2.0;
 
+			text_buf->set_alignment(align_rtl_checked);
+			text_buf->set_width(text_width);
 			switch (align_rtl_checked) {
 				case HORIZONTAL_ALIGNMENT_FILL:
 				case HORIZONTAL_ALIGNMENT_LEFT: {
@@ -310,7 +313,7 @@ void Button::_notification(int p_what) {
 						icon_ofs.x = 0.0;
 					}
 					if (_internal_margin[SIDE_LEFT] > 0) {
-						text_ofs.x = style->get_margin(SIDE_LEFT) + icon_ofs.x + _internal_margin[SIDE_LEFT] + get_theme_constant(SNAME("hseparation"));
+						text_ofs.x = style->get_margin(SIDE_LEFT) + icon_ofs.x + _internal_margin[SIDE_LEFT] + get_theme_constant(SNAME("h_separation"));
 					} else {
 						text_ofs.x = style->get_margin(SIDE_LEFT) + icon_ofs.x;
 					}
@@ -327,7 +330,7 @@ void Button::_notification(int p_what) {
 				} break;
 				case HORIZONTAL_ALIGNMENT_RIGHT: {
 					if (_internal_margin[SIDE_RIGHT] > 0) {
-						text_ofs.x = size.x - style->get_margin(SIDE_RIGHT) - text_width - _internal_margin[SIDE_RIGHT] - get_theme_constant(SNAME("hseparation"));
+						text_ofs.x = size.x - style->get_margin(SIDE_RIGHT) - text_width - _internal_margin[SIDE_RIGHT] - get_theme_constant(SNAME("h_separation"));
 					} else {
 						text_ofs.x = size.x - style->get_margin(SIDE_RIGHT) - text_width;
 					}
@@ -498,7 +501,7 @@ bool Button::_set(const StringName &p_name, const Variant &p_value) {
 	if (str.begins_with("opentype_features/")) {
 		String name = str.get_slicec('/', 1);
 		int32_t tag = TS->name_to_tag(name);
-		double value = p_value;
+		int value = p_value;
 		if (value == -1) {
 			if (opentype_features.has(tag)) {
 				opentype_features.erase(tag);
@@ -506,7 +509,7 @@ bool Button::_set(const StringName &p_name, const Variant &p_value) {
 				update();
 			}
 		} else {
-			if ((double)opentype_features[tag] != value) {
+			if (!opentype_features.has(tag) || (int)opentype_features[tag] != value) {
 				opentype_features[tag] = value;
 				_shape();
 				update();
@@ -538,7 +541,7 @@ bool Button::_get(const StringName &p_name, Variant &r_ret) const {
 void Button::_get_property_list(List<PropertyInfo> *p_list) const {
 	for (const Variant *ftr = opentype_features.next(nullptr); ftr != nullptr; ftr = opentype_features.next(ftr)) {
 		String name = TS->tag_to_name(*ftr);
-		p_list->push_back(PropertyInfo(Variant::FLOAT, "opentype_features/" + name));
+		p_list->push_back(PropertyInfo(Variant::INT, "opentype_features/" + name));
 	}
 	p_list->push_back(PropertyInfo(Variant::NIL, "opentype_features/_new", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR));
 }
@@ -568,7 +571,7 @@ void Button::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "text", PROPERTY_HINT_MULTILINE_TEXT, "", PROPERTY_USAGE_DEFAULT_INTL), "set_text", "get_text");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "text_direction", PROPERTY_HINT_ENUM, "Auto,Left-to-Right,Right-to-Left,Inherited"), "set_text_direction", "get_text_direction");
-	ADD_PROPERTY(PropertyInfo(Variant::STRING, "language"), "set_language", "get_language");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "language", PROPERTY_HINT_LOCALE_ID, ""), "set_language", "get_language");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "icon", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D"), "set_button_icon", "get_button_icon");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "flat"), "set_flat", "is_flat");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "clip_text"), "set_clip_text", "get_clip_text");
@@ -580,8 +583,8 @@ void Button::_bind_methods() {
 Button::Button(const String &p_text) {
 	text_buf.instantiate();
 	text_buf->set_flags(TextServer::BREAK_MANDATORY);
-
 	set_mouse_filter(MOUSE_FILTER_STOP);
+
 	set_text(p_text);
 }
 

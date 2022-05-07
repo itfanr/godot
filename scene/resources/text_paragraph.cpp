@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -63,7 +63,7 @@ void TextParagraph::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_dropcap", "text", "fonts", "size", "dropcap_margins", "opentype_features", "language"), &TextParagraph::set_dropcap, DEFVAL(Rect2()), DEFVAL(Dictionary()), DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("clear_dropcap"), &TextParagraph::clear_dropcap);
 
-	ClassDB::bind_method(D_METHOD("add_string", "text", "fonts", "size", "opentype_features", "language"), &TextParagraph::add_string, DEFVAL(Dictionary()), DEFVAL(""));
+	ClassDB::bind_method(D_METHOD("add_string", "text", "fonts", "size", "opentype_features", "language", "meta"), &TextParagraph::add_string, DEFVAL(Dictionary()), DEFVAL(""), DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("add_object", "key", "size", "inline_align", "length"), &TextParagraph::add_object, DEFVAL(INLINE_ALIGNMENT_CENTER), DEFVAL(1));
 	ClassDB::bind_method(D_METHOD("resize_object", "key", "size", "inline_align"), &TextParagraph::resize_object, DEFVAL(INLINE_ALIGNMENT_CENTER));
 
@@ -140,7 +140,7 @@ void TextParagraph::_bind_methods() {
 void TextParagraph::_shape_lines() {
 	if (lines_dirty) {
 		for (int i = 0; i < lines_rid.size(); i++) {
-			TS->free(lines_rid[i]);
+			TS->free_rid(lines_rid[i]);
 		}
 		lines_rid.clear();
 
@@ -168,7 +168,7 @@ void TextParagraph::_shape_lines() {
 				RID line = TS->shaped_text_substr(rid, line_breaks[i], line_breaks[i + 1] - line_breaks[i]);
 				float h = (TS->shaped_text_get_orientation(line) == TextServer::ORIENTATION_HORIZONTAL) ? TS->shaped_text_get_size(line).y : TS->shaped_text_get_size(line).x;
 				if (v_offset < h) {
-					TS->free(line);
+					TS->free_rid(line);
 					break;
 				}
 				if (!tab_stops.is_empty()) {
@@ -271,7 +271,7 @@ void TextParagraph::clear() {
 	spacing_top = 0;
 	spacing_bottom = 0;
 	for (int i = 0; i < lines_rid.size(); i++) {
-		TS->free(lines_rid[i]);
+		TS->free_rid(lines_rid[i]);
 	}
 	lines_rid.clear();
 	TS->shaped_text_clear(rid);
@@ -344,9 +344,9 @@ void TextParagraph::clear_dropcap() {
 	lines_dirty = true;
 }
 
-bool TextParagraph::add_string(const String &p_text, const Ref<Font> &p_fonts, int p_size, const Dictionary &p_opentype_features, const String &p_language) {
+bool TextParagraph::add_string(const String &p_text, const Ref<Font> &p_fonts, int p_size, const Dictionary &p_opentype_features, const String &p_language, const Variant &p_meta) {
 	ERR_FAIL_COND_V(p_fonts.is_null(), false);
-	bool res = TS->shaped_text_add_string(rid, p_text, p_fonts->get_rids(), p_size, p_opentype_features, p_language);
+	bool res = TS->shaped_text_add_string(rid, p_text, p_fonts->get_rids(), p_size, p_opentype_features, p_language, p_meta);
 	spacing_top = p_fonts->get_spacing(TextServer::SPACING_TOP);
 	spacing_bottom = p_fonts->get_spacing(TextServer::SPACING_BOTTOM);
 	lines_dirty = true;
@@ -561,7 +561,7 @@ void TextParagraph::draw(RID p_canvas, const Vector2 &p_pos, const Color &p_colo
 	if (h_offset > 0) {
 		// Draw dropcap.
 		Vector2 dc_off = ofs;
-		if (TS->shaped_text_get_direction(dropcap_rid) == TextServer::DIRECTION_RTL) {
+		if (TS->shaped_text_get_inferred_direction(dropcap_rid) == TextServer::DIRECTION_RTL) {
 			if (TS->shaped_text_get_orientation(dropcap_rid) == TextServer::ORIENTATION_HORIZONTAL) {
 				dc_off.x += width - h_offset;
 			} else {
@@ -579,7 +579,7 @@ void TextParagraph::draw(RID p_canvas, const Vector2 &p_pos, const Color &p_colo
 			ofs.x = p_pos.x;
 			ofs.y += TS->shaped_text_get_ascent(lines_rid[i]) + spacing_top;
 			if (i <= dropcap_lines) {
-				if (TS->shaped_text_get_direction(dropcap_rid) == TextServer::DIRECTION_LTR) {
+				if (TS->shaped_text_get_inferred_direction(dropcap_rid) == TextServer::DIRECTION_LTR) {
 					ofs.x -= h_offset;
 				}
 				l_width -= h_offset;
@@ -588,7 +588,7 @@ void TextParagraph::draw(RID p_canvas, const Vector2 &p_pos, const Color &p_colo
 			ofs.y = p_pos.y;
 			ofs.x += TS->shaped_text_get_ascent(lines_rid[i]) + spacing_top;
 			if (i <= dropcap_lines) {
-				if (TS->shaped_text_get_direction(dropcap_rid) == TextServer::DIRECTION_LTR) {
+				if (TS->shaped_text_get_inferred_direction(dropcap_rid) == TextServer::DIRECTION_LTR) {
 					ofs.x -= h_offset;
 				}
 				l_width -= h_offset;
@@ -598,7 +598,7 @@ void TextParagraph::draw(RID p_canvas, const Vector2 &p_pos, const Color &p_colo
 		if (width > 0) {
 			switch (alignment) {
 				case HORIZONTAL_ALIGNMENT_FILL:
-					if (TS->shaped_text_get_direction(lines_rid[i]) == TextServer::DIRECTION_RTL) {
+					if (TS->shaped_text_get_inferred_direction(lines_rid[i]) == TextServer::DIRECTION_RTL) {
 						if (TS->shaped_text_get_orientation(lines_rid[i]) == TextServer::ORIENTATION_HORIZONTAL) {
 							ofs.x += l_width - line_width;
 						} else {
@@ -609,10 +609,18 @@ void TextParagraph::draw(RID p_canvas, const Vector2 &p_pos, const Color &p_colo
 				case HORIZONTAL_ALIGNMENT_LEFT:
 					break;
 				case HORIZONTAL_ALIGNMENT_CENTER: {
-					if (TS->shaped_text_get_orientation(lines_rid[i]) == TextServer::ORIENTATION_HORIZONTAL) {
-						ofs.x += Math::floor((l_width - line_width) / 2.0);
-					} else {
-						ofs.y += Math::floor((l_width - line_width) / 2.0);
+					if (line_width <= l_width) {
+						if (TS->shaped_text_get_orientation(lines_rid[i]) == TextServer::ORIENTATION_HORIZONTAL) {
+							ofs.x += Math::floor((l_width - line_width) / 2.0);
+						} else {
+							ofs.y += Math::floor((l_width - line_width) / 2.0);
+						}
+					} else if (TS->shaped_text_get_inferred_direction(lines_rid[i]) == TextServer::DIRECTION_RTL) {
+						if (TS->shaped_text_get_orientation(lines_rid[i]) == TextServer::ORIENTATION_HORIZONTAL) {
+							ofs.x += l_width - line_width;
+						} else {
+							ofs.y += l_width - line_width;
+						}
 					}
 				} break;
 				case HORIZONTAL_ALIGNMENT_RIGHT: {
@@ -655,7 +663,7 @@ void TextParagraph::draw_outline(RID p_canvas, const Vector2 &p_pos, int p_outli
 	if (h_offset > 0) {
 		// Draw dropcap.
 		Vector2 dc_off = ofs;
-		if (TS->shaped_text_get_direction(dropcap_rid) == TextServer::DIRECTION_RTL) {
+		if (TS->shaped_text_get_inferred_direction(dropcap_rid) == TextServer::DIRECTION_RTL) {
 			if (TS->shaped_text_get_orientation(dropcap_rid) == TextServer::ORIENTATION_HORIZONTAL) {
 				dc_off.x += width - h_offset;
 			} else {
@@ -671,7 +679,7 @@ void TextParagraph::draw_outline(RID p_canvas, const Vector2 &p_pos, int p_outli
 			ofs.x = p_pos.x;
 			ofs.y += TS->shaped_text_get_ascent(lines_rid[i]) + spacing_top;
 			if (i <= dropcap_lines) {
-				if (TS->shaped_text_get_direction(dropcap_rid) == TextServer::DIRECTION_LTR) {
+				if (TS->shaped_text_get_inferred_direction(dropcap_rid) == TextServer::DIRECTION_LTR) {
 					ofs.x -= h_offset;
 				}
 				l_width -= h_offset;
@@ -680,7 +688,7 @@ void TextParagraph::draw_outline(RID p_canvas, const Vector2 &p_pos, int p_outli
 			ofs.y = p_pos.y;
 			ofs.x += TS->shaped_text_get_ascent(lines_rid[i]) + spacing_top;
 			if (i <= dropcap_lines) {
-				if (TS->shaped_text_get_direction(dropcap_rid) == TextServer::DIRECTION_LTR) {
+				if (TS->shaped_text_get_inferred_direction(dropcap_rid) == TextServer::DIRECTION_LTR) {
 					ofs.x -= h_offset;
 				}
 				l_width -= h_offset;
@@ -690,7 +698,7 @@ void TextParagraph::draw_outline(RID p_canvas, const Vector2 &p_pos, int p_outli
 		if (width > 0) {
 			switch (alignment) {
 				case HORIZONTAL_ALIGNMENT_FILL:
-					if (TS->shaped_text_get_direction(lines_rid[i]) == TextServer::DIRECTION_RTL) {
+					if (TS->shaped_text_get_inferred_direction(lines_rid[i]) == TextServer::DIRECTION_RTL) {
 						if (TS->shaped_text_get_orientation(lines_rid[i]) == TextServer::ORIENTATION_HORIZONTAL) {
 							ofs.x += l_width - length;
 						} else {
@@ -701,10 +709,18 @@ void TextParagraph::draw_outline(RID p_canvas, const Vector2 &p_pos, int p_outli
 				case HORIZONTAL_ALIGNMENT_LEFT:
 					break;
 				case HORIZONTAL_ALIGNMENT_CENTER: {
-					if (TS->shaped_text_get_orientation(lines_rid[i]) == TextServer::ORIENTATION_HORIZONTAL) {
-						ofs.x += Math::floor((l_width - length) / 2.0);
-					} else {
-						ofs.y += Math::floor((l_width - length) / 2.0);
+					if (length <= l_width) {
+						if (TS->shaped_text_get_orientation(lines_rid[i]) == TextServer::ORIENTATION_HORIZONTAL) {
+							ofs.x += Math::floor((l_width - length) / 2.0);
+						} else {
+							ofs.y += Math::floor((l_width - length) / 2.0);
+						}
+					} else if (TS->shaped_text_get_inferred_direction(lines_rid[i]) == TextServer::DIRECTION_RTL) {
+						if (TS->shaped_text_get_orientation(lines_rid[i]) == TextServer::ORIENTATION_HORIZONTAL) {
+							ofs.x += l_width - length;
+						} else {
+							ofs.y += l_width - length;
+						}
 					}
 				} break;
 				case HORIZONTAL_ALIGNMENT_RIGHT: {
@@ -772,7 +788,7 @@ void TextParagraph::draw_dropcap(RID p_canvas, const Vector2 &p_pos, const Color
 
 	if (h_offset > 0) {
 		// Draw dropcap.
-		if (TS->shaped_text_get_direction(dropcap_rid) == TextServer::DIRECTION_RTL) {
+		if (TS->shaped_text_get_inferred_direction(dropcap_rid) == TextServer::DIRECTION_RTL) {
 			if (TS->shaped_text_get_orientation(dropcap_rid) == TextServer::ORIENTATION_HORIZONTAL) {
 				ofs.x += width - h_offset;
 			} else {
@@ -794,7 +810,7 @@ void TextParagraph::draw_dropcap_outline(RID p_canvas, const Vector2 &p_pos, int
 
 	if (h_offset > 0) {
 		// Draw dropcap.
-		if (TS->shaped_text_get_direction(dropcap_rid) == TextServer::DIRECTION_RTL) {
+		if (TS->shaped_text_get_inferred_direction(dropcap_rid) == TextServer::DIRECTION_RTL) {
 			if (TS->shaped_text_get_orientation(dropcap_rid) == TextServer::ORIENTATION_HORIZONTAL) {
 				ofs.x += width - h_offset;
 			} else {
@@ -847,9 +863,9 @@ TextParagraph::TextParagraph() {
 
 TextParagraph::~TextParagraph() {
 	for (int i = 0; i < lines_rid.size(); i++) {
-		TS->free(lines_rid[i]);
+		TS->free_rid(lines_rid[i]);
 	}
 	lines_rid.clear();
-	TS->free(rid);
-	TS->free(dropcap_rid);
+	TS->free_rid(rid);
+	TS->free_rid(dropcap_rid);
 }

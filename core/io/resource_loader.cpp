@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -125,14 +125,14 @@ void ResourceFormatLoader::get_recognized_extensions(List<String> *p_extensions)
 	}
 }
 
-RES ResourceFormatLoader::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads, float *r_progress, CacheMode p_cache_mode) {
+Ref<Resource> ResourceFormatLoader::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads, float *r_progress, CacheMode p_cache_mode) {
 	Variant res;
 	if (GDVIRTUAL_CALL(_load, p_path, p_original_path, p_use_sub_threads, p_cache_mode, res)) {
 		if (res.get_type() == Variant::INT) { // Error code, abort.
 			if (r_error) {
 				*r_error = (Error)res.operator int64_t();
 			}
-			return RES();
+			return Ref<Resource>();
 		} else { // Success, pass on result.
 			if (r_error) {
 				*r_error = OK;
@@ -141,7 +141,7 @@ RES ResourceFormatLoader::load(const String &p_path, const String &p_original_pa
 		}
 	}
 
-	ERR_FAIL_V_MSG(RES(), "Failed to load resource '" + p_path + "'. ResourceFormatLoader::load was not implemented for this resource type.");
+	ERR_FAIL_V_MSG(Ref<Resource>(), "Failed to load resource '" + p_path + "'. ResourceFormatLoader::load was not implemented for this resource type.");
 }
 
 void ResourceFormatLoader::get_dependencies(const String &p_path, List<String> *p_dependencies, bool p_add_types) {
@@ -185,7 +185,7 @@ void ResourceFormatLoader::_bind_methods() {
 
 ///////////////////////////////////
 
-RES ResourceLoader::_load(const String &p_path, const String &p_original_path, const String &p_type_hint, ResourceFormatLoader::CacheMode p_cache_mode, Error *r_error, bool p_use_sub_threads, float *r_progress) {
+Ref<Resource> ResourceLoader::_load(const String &p_path, const String &p_original_path, const String &p_type_hint, ResourceFormatLoader::CacheMode p_cache_mode, Error *r_error, bool p_use_sub_threads, float *r_progress) {
 	bool found = false;
 
 	// Try all loaders and pick the first match for the type hint
@@ -194,7 +194,7 @@ RES ResourceLoader::_load(const String &p_path, const String &p_original_path, c
 			continue;
 		}
 		found = true;
-		RES res = loader[i]->load(p_path, !p_original_path.is_empty() ? p_original_path : p_path, r_error, p_use_sub_threads, r_progress, p_cache_mode);
+		Ref<Resource> res = loader[i]->load(p_path, !p_original_path.is_empty() ? p_original_path : p_path, r_error, p_use_sub_threads, r_progress, p_cache_mode);
 		if (res.is_null()) {
 			continue;
 		}
@@ -202,15 +202,15 @@ RES ResourceLoader::_load(const String &p_path, const String &p_original_path, c
 		return res;
 	}
 
-	ERR_FAIL_COND_V_MSG(found, RES(),
+	ERR_FAIL_COND_V_MSG(found, Ref<Resource>(),
 			vformat("Failed loading resource: %s. Make sure resources have been imported by opening the project in the editor at least once.", p_path));
 
 #ifdef TOOLS_ENABLED
-	FileAccessRef file_check = FileAccess::create(FileAccess::ACCESS_RESOURCES);
-	ERR_FAIL_COND_V_MSG(!file_check->file_exists(p_path), RES(), "Resource file not found: " + p_path + ".");
+	Ref<FileAccess> file_check = FileAccess::create(FileAccess::ACCESS_RESOURCES);
+	ERR_FAIL_COND_V_MSG(!file_check->file_exists(p_path), Ref<Resource>(), "Resource file not found: " + p_path + ".");
 #endif
 
-	ERR_FAIL_V_MSG(RES(), "No loader found for resource: " + p_path + ".");
+	ERR_FAIL_V_MSG(Ref<Resource>(), "No loader found for resource: " + p_path + ".");
 }
 
 void ResourceLoader::_thread_load_function(void *p_userdata) {
@@ -342,7 +342,7 @@ Error ResourceLoader::load_threaded_request(const String &p_path, const String &
 			Resource **rptr = ResourceCache::resources.getptr(local_path);
 
 			if (rptr) {
-				RES res(*rptr);
+				Ref<Resource> res(*rptr);
 				//it is possible this resource was just freed in a thread. If so, this referencing will not work and resource is considered not cached
 				if (res.is_valid()) {
 					//referencing is fine
@@ -427,7 +427,7 @@ ResourceLoader::ThreadLoadStatus ResourceLoader::load_threaded_get_status(const 
 	return status;
 }
 
-RES ResourceLoader::load_threaded_get(const String &p_path, Error *r_error) {
+Ref<Resource> ResourceLoader::load_threaded_get(const String &p_path, Error *r_error) {
 	String local_path = _validate_local_path(p_path);
 
 	thread_load_mutex->lock();
@@ -436,7 +436,7 @@ RES ResourceLoader::load_threaded_get(const String &p_path, Error *r_error) {
 		if (r_error) {
 			*r_error = ERR_INVALID_PARAMETER;
 		}
-		return RES();
+		return Ref<Resource>();
 	}
 
 	ThreadLoadTask &load_task = thread_load_tasks[local_path];
@@ -480,11 +480,11 @@ RES ResourceLoader::load_threaded_get(const String &p_path, Error *r_error) {
 			if (r_error) {
 				*r_error = ERR_INVALID_PARAMETER;
 			}
-			return RES();
+			return Ref<Resource>();
 		}
 	}
 
-	RES resource = load_task.resource;
+	Ref<Resource> resource = load_task.resource;
 	if (r_error) {
 		*r_error = load_task.error;
 	}
@@ -504,7 +504,7 @@ RES ResourceLoader::load_threaded_get(const String &p_path, Error *r_error) {
 	return resource;
 }
 
-RES ResourceLoader::load(const String &p_path, const String &p_type_hint, ResourceFormatLoader::CacheMode p_cache_mode, Error *r_error) {
+Ref<Resource> ResourceLoader::load(const String &p_path, const String &p_type_hint, ResourceFormatLoader::CacheMode p_cache_mode, Error *r_error) {
 	if (r_error) {
 		*r_error = ERR_CANT_OPEN;
 	}
@@ -522,7 +522,7 @@ RES ResourceLoader::load(const String &p_path, const String &p_type_hint, Resour
 					*r_error = err;
 				}
 				thread_load_mutex->unlock();
-				return RES();
+				return Ref<Resource>();
 			}
 			thread_load_mutex->unlock();
 
@@ -535,7 +535,7 @@ RES ResourceLoader::load(const String &p_path, const String &p_type_hint, Resour
 		Resource **rptr = ResourceCache::resources.getptr(local_path);
 
 		if (rptr) {
-			RES res(*rptr);
+			Ref<Resource> res(*rptr);
 
 			//it is possible this resource was just freed in a thread. If so, this referencing will not work and resource is considered not cached
 			if (res.is_valid()) {
@@ -575,16 +575,16 @@ RES ResourceLoader::load(const String &p_path, const String &p_type_hint, Resour
 		String path = _path_remap(local_path, &xl_remapped);
 
 		if (path.is_empty()) {
-			ERR_FAIL_V_MSG(RES(), "Remapping '" + local_path + "' failed.");
+			ERR_FAIL_V_MSG(Ref<Resource>(), "Remapping '" + local_path + "' failed.");
 		}
 
 		print_verbose("Loading resource: " + path);
 		float p;
-		RES res = _load(path, local_path, p_type_hint, p_cache_mode, r_error, false, &p);
+		Ref<Resource> res = _load(path, local_path, p_type_hint, p_cache_mode, r_error, false, &p);
 
 		if (res.is_null()) {
 			print_verbose("Failed loading resource: " + path);
-			return RES();
+			return Ref<Resource>();
 		}
 
 		if (xl_remapped) {
@@ -672,10 +672,6 @@ int ResourceLoader::get_import_order(const String &p_path) {
 		if (!loader[i]->recognize_path(local_path)) {
 			continue;
 		}
-		/*
-		if (p_type_hint!="" && !loader[i]->handles_type(p_type_hint))
-			continue;
-		*/
 
 		return loader[i]->get_import_order(p_path);
 	}
@@ -690,10 +686,6 @@ String ResourceLoader::get_import_group_file(const String &p_path) {
 		if (!loader[i]->recognize_path(local_path)) {
 			continue;
 		}
-		/*
-		if (p_type_hint!="" && !loader[i]->handles_type(p_type_hint))
-			continue;
-		*/
 
 		return loader[i]->get_import_group_file(p_path);
 	}
@@ -708,10 +700,6 @@ bool ResourceLoader::is_import_valid(const String &p_path) {
 		if (!loader[i]->recognize_path(local_path)) {
 			continue;
 		}
-		/*
-		if (p_type_hint!="" && !loader[i]->handles_type(p_type_hint))
-			continue;
-		*/
 
 		return loader[i]->is_import_valid(p_path);
 	}
@@ -726,10 +714,6 @@ bool ResourceLoader::is_imported(const String &p_path) {
 		if (!loader[i]->recognize_path(local_path)) {
 			continue;
 		}
-		/*
-		if (p_type_hint!="" && !loader[i]->handles_type(p_type_hint))
-			continue;
-		*/
 
 		return loader[i]->is_imported(p_path);
 	}
@@ -744,10 +728,6 @@ void ResourceLoader::get_dependencies(const String &p_path, List<String> *p_depe
 		if (!loader[i]->recognize_path(local_path)) {
 			continue;
 		}
-		/*
-		if (p_type_hint!="" && !loader[i]->handles_type(p_type_hint))
-			continue;
-		*/
 
 		loader[i]->get_dependencies(local_path, p_dependencies, p_add_types);
 	}
@@ -760,10 +740,6 @@ Error ResourceLoader::rename_dependencies(const String &p_path, const Map<String
 		if (!loader[i]->recognize_path(local_path)) {
 			continue;
 		}
-		/*
-		if (p_type_hint!="" && !loader[i]->handles_type(p_type_hint))
-			continue;
-		*/
 
 		return loader[i]->rename_dependencies(local_path, p_map);
 	}
@@ -806,38 +782,26 @@ String ResourceLoader::_path_remap(const String &p_path, bool *r_translation_rem
 
 		// To find the path of the remapped resource, we extract the locale name after
 		// the last ':' to match the project locale.
-		// We also fall back in case of regional locales as done in TranslationServer::translate
-		// (e.g. 'ru_RU' -> 'ru' if the former has no specific mapping).
 
 		String locale = TranslationServer::get_singleton()->get_locale();
 		ERR_FAIL_COND_V_MSG(locale.length() < 2, p_path, "Could not remap path '" + p_path + "' for translation as configured locale '" + locale + "' is invalid.");
-		String lang = TranslationServer::get_language_code(locale);
 
 		Vector<String> &res_remaps = *translation_remaps.getptr(new_path);
-		bool near_match = false;
 
+		int best_score = 0;
 		for (int i = 0; i < res_remaps.size(); i++) {
 			int split = res_remaps[i].rfind(":");
 			if (split == -1) {
 				continue;
 			}
-
 			String l = res_remaps[i].substr(split + 1).strip_edges();
-			if (l == locale) { // Exact match.
+			int score = TranslationServer::get_singleton()->compare_locales(locale, l);
+			if (score > 0 && score >= best_score) {
 				new_path = res_remaps[i].left(split);
-				break;
-			} else if (near_match) {
-				continue; // Already found near match, keep going for potential exact match.
-			}
-
-			// No exact match (e.g. locale 'ru_RU' but remap is 'ru'), let's look further
-			// for a near match (same language code, i.e. first 2 or 3 letters before
-			// regional code, if included).
-			if (TranslationServer::get_language_code(l) == lang) {
-				// Language code matches, that's a near match. Keep looking for exact match.
-				near_match = true;
-				new_path = res_remaps[i].left(split);
-				continue;
+				best_score = score;
+				if (score == 10) {
+					break; // Exact match, skip the rest.
+				}
 			}
 		}
 
@@ -853,9 +817,8 @@ String ResourceLoader::_path_remap(const String &p_path, bool *r_translation_rem
 	if (new_path == p_path) { // Did not remap.
 		// Try file remap.
 		Error err;
-		FileAccess *f = FileAccess::open(p_path + ".remap", FileAccess::READ, &err);
-
-		if (f) {
+		Ref<FileAccess> f = FileAccess::open(p_path + ".remap", FileAccess::READ, &err);
+		if (f.is_valid()) {
 			VariantParser::StreamFile stream;
 			stream.f = f;
 
@@ -885,8 +848,6 @@ String ResourceLoader::_path_remap(const String &p_path, bool *r_translation_rem
 					break;
 				}
 			}
-
-			memdelete(f);
 		}
 	}
 
@@ -1018,6 +979,10 @@ void ResourceLoader::remove_custom_resource_format_loader(String script_path) {
 	}
 }
 
+void ResourceLoader::set_create_missing_resources_if_class_unavailable(bool p_enable) {
+	create_missing_resources_if_class_unavailable = p_enable;
+}
+
 void ResourceLoader::add_custom_loaders() {
 	// Custom loaders registration exploits global class names
 
@@ -1069,6 +1034,7 @@ void *ResourceLoader::err_notify_ud = nullptr;
 DependencyErrorNotify ResourceLoader::dep_err_notify = nullptr;
 void *ResourceLoader::dep_err_notify_ud = nullptr;
 
+bool ResourceLoader::create_missing_resources_if_class_unavailable = false;
 bool ResourceLoader::abort_on_missing_resource = true;
 bool ResourceLoader::timestamp_on_load = false;
 

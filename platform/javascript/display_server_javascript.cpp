@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,13 +28,13 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#include "platform/javascript/display_server_javascript.h"
+#include "display_server_javascript.h"
 
 #ifdef GLES3_ENABLED
 #include "drivers/gles3/rasterizer_gles3.h"
 #endif
 #include "platform/javascript/os_javascript.h"
-#include "servers/rendering/rasterizer_dummy.h"
+#include "servers/rendering/dummy/rasterizer_dummy.h"
 
 #include <emscripten.h>
 #include <png.h>
@@ -137,7 +137,6 @@ int DisplayServerJavaScript::mouse_button_callback(int p_pressed, int p_button, 
 	DisplayServerJavaScript *ds = get_singleton();
 
 	Point2 pos(p_x, p_y);
-	Input::get_singleton()->set_mouse_position(pos);
 	Ref<InputEventMouseButton> ev;
 	ev.instantiate();
 	ev->set_position(pos);
@@ -219,7 +218,6 @@ void DisplayServerJavaScript::mouse_move_callback(double p_x, double p_y, double
 	}
 
 	Point2 pos(p_x, p_y);
-	Input::get_singleton()->set_mouse_position(pos);
 	Ref<InputEventMouseMotion> ev;
 	ev.instantiate();
 	dom2godot_mod(ev, p_modifiers);
@@ -229,8 +227,7 @@ void DisplayServerJavaScript::mouse_move_callback(double p_x, double p_y, double
 	ev->set_global_position(pos);
 
 	ev->set_relative(Vector2(p_rel_x, p_rel_y));
-	Input::get_singleton()->set_mouse_position(ev->get_position());
-	ev->set_speed(Input::get_singleton()->get_last_mouse_speed());
+	ev->set_velocity(Input::get_singleton()->get_last_mouse_velocity());
 
 	Input::get_singleton()->parse_input_event(ev);
 }
@@ -277,6 +274,90 @@ const char *DisplayServerJavaScript::godot2dom_cursor(DisplayServer::CursorShape
 	}
 }
 
+bool DisplayServerJavaScript::tts_is_speaking() const {
+	return godot_js_tts_is_speaking();
+}
+
+bool DisplayServerJavaScript::tts_is_paused() const {
+	return godot_js_tts_is_paused();
+}
+
+void DisplayServerJavaScript::update_voices_callback(int p_size, const char **p_voice) {
+	get_singleton()->voices.clear();
+	for (int i = 0; i < p_size; i++) {
+		Vector<String> tokens = String::utf8(p_voice[i]).split(";", true, 2);
+		if (tokens.size() == 2) {
+			Dictionary voice_d;
+			voice_d["name"] = tokens[1];
+			voice_d["id"] = tokens[1];
+			voice_d["language"] = tokens[0];
+			get_singleton()->voices.push_back(voice_d);
+		}
+	}
+}
+
+Array DisplayServerJavaScript::tts_get_voices() const {
+	godot_js_tts_get_voices(update_voices_callback);
+	return voices;
+}
+
+void DisplayServerJavaScript::tts_speak(const String &p_text, const String &p_voice, int p_volume, float p_pitch, float p_rate, int p_utterance_id, bool p_interrupt) {
+	if (p_interrupt) {
+		tts_stop();
+	}
+
+	if (p_text.is_empty()) {
+		tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_CANCELED, p_utterance_id);
+		return;
+	}
+
+	CharString string = p_text.utf8();
+	utterance_ids[p_utterance_id] = string;
+
+	godot_js_tts_speak(string.get_data(), p_voice.utf8().get_data(), CLAMP(p_volume, 0, 100), CLAMP(p_pitch, 0.f, 2.f), CLAMP(p_rate, 0.1f, 10.f), p_utterance_id, DisplayServerJavaScript::_js_utterance_callback);
+}
+
+void DisplayServerJavaScript::tts_pause() {
+	godot_js_tts_pause();
+}
+
+void DisplayServerJavaScript::tts_resume() {
+	godot_js_tts_resume();
+}
+
+void DisplayServerJavaScript::tts_stop() {
+	for (Map<int, CharString>::Element *E = utterance_ids.front(); E; E = E->next()) {
+		tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_CANCELED, E->key());
+	}
+	utterance_ids.clear();
+	godot_js_tts_stop();
+}
+
+void DisplayServerJavaScript::_js_utterance_callback(int p_event, int p_id, int p_pos) {
+	DisplayServerJavaScript *ds = (DisplayServerJavaScript *)DisplayServer::get_singleton();
+	if (ds->utterance_ids.has(p_id)) {
+		int pos = 0;
+		if ((TTSUtteranceEvent)p_event == DisplayServer::TTS_UTTERANCE_BOUNDARY) {
+			// Convert position from UTF-8 to UTF-32.
+			const CharString &string = ds->utterance_ids[p_id];
+			for (int i = 0; i < MIN(p_pos, string.length()); i++) {
+				uint8_t c = string[i];
+				if ((c & 0xe0) == 0xc0) {
+					i += 1;
+				} else if ((c & 0xf0) == 0xe0) {
+					i += 2;
+				} else if ((c & 0xf8) == 0xf0) {
+					i += 3;
+				}
+				pos++;
+			}
+		} else if ((TTSUtteranceEvent)p_event != DisplayServer::TTS_UTTERANCE_STARTED) {
+			ds->utterance_ids.erase(p_id);
+		}
+		ds->tts_post_utterance_event((TTSUtteranceEvent)p_event, p_id, pos);
+	}
+}
+
 void DisplayServerJavaScript::cursor_set_shape(CursorShape p_shape) {
 	ERR_FAIL_INDEX(p_shape, CURSOR_MAX);
 	if (cursor_shape == p_shape) {
@@ -290,7 +371,7 @@ DisplayServer::CursorShape DisplayServerJavaScript::cursor_get_shape() const {
 	return cursor_shape;
 }
 
-void DisplayServerJavaScript::cursor_set_custom_image(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot) {
+void DisplayServerJavaScript::cursor_set_custom_image(const Ref<Resource> &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot) {
 	if (p_cursor.is_valid()) {
 		Ref<Texture2D> texture = p_cursor;
 		Ref<AtlasTexture> atlas_texture = p_cursor;
@@ -328,12 +409,13 @@ void DisplayServerJavaScript::cursor_set_custom_image(const RES &p_cursor, Curso
 
 		image = image->duplicate();
 
-		if (atlas_texture.is_valid())
+		if (atlas_texture.is_valid()) {
 			image->crop_from_point(
 					atlas_rect.position.x,
 					atlas_rect.position.y,
 					texture_size.width,
 					texture_size.height);
+		}
 
 		if (image->get_format() != Image::FORMAT_RGBA8) {
 			image->convert(Image::FORMAT_RGBA8);
@@ -500,7 +582,7 @@ void DisplayServerJavaScript::vk_input_text_callback(const char *p_text, int p_c
 		return;
 	}
 	// Call input_text
-	Variant event = String(p_text);
+	Variant event = String::utf8(p_text);
 	Variant *eventp = &event;
 	Variant ret;
 	Callable::CallError ce;
@@ -558,24 +640,16 @@ void DisplayServerJavaScript::process_joypads() {
 			continue;
 		}
 		for (int b = 0; b < s_btns_num; b++) {
-			float value = s_btns[b];
 			// Buttons 6 and 7 in the standard mapping need to be
 			// axis to be handled as JoyAxis::TRIGGER by Godot.
 			if (s_standard && (b == 6 || b == 7)) {
-				Input::JoyAxisValue joy_axis;
-				joy_axis.min = 0;
-				joy_axis.value = value;
-				JoyAxis a = b == 6 ? JoyAxis::TRIGGER_LEFT : JoyAxis::TRIGGER_RIGHT;
-				input->joy_axis(idx, a, joy_axis);
+				input->joy_axis(idx, (JoyAxis)b, s_btns[b]);
 			} else {
-				input->joy_button(idx, (JoyButton)b, value);
+				input->joy_button(idx, (JoyButton)b, s_btns[b]);
 			}
 		}
 		for (int a = 0; a < s_axes_num; a++) {
-			Input::JoyAxisValue joy_axis;
-			joy_axis.min = -1;
-			joy_axis.value = s_axes[a];
-			input->joy_axis(idx, (JoyAxis)a, joy_axis);
+			input->joy_axis(idx, (JoyAxis)a, s_axes[a]);
 		}
 	}
 }
@@ -590,7 +664,7 @@ Vector<String> DisplayServerJavaScript::get_rendering_drivers_func() {
 
 // Clipboard
 void DisplayServerJavaScript::update_clipboard_callback(const char *p_text) {
-	get_singleton()->clipboard = p_text;
+	get_singleton()->clipboard = String::utf8(p_text);
 }
 
 void DisplayServerJavaScript::clipboard_set(const String &p_text) {
@@ -629,8 +703,9 @@ void DisplayServerJavaScript::set_icon(const Ref<Image> &p_icon) {
 		ERR_FAIL_COND(icon->decompress() != OK);
 	}
 	if (icon->get_format() != Image::FORMAT_RGBA8) {
-		if (icon == p_icon)
+		if (icon == p_icon) {
 			icon = icon->duplicate();
+		}
 		icon->convert(Image::FORMAT_RGBA8);
 	}
 
@@ -674,7 +749,7 @@ DisplayServerJavaScript::DisplayServerJavaScript(const String &p_rendering_drive
 	godot_js_config_canvas_id_get(canvas_id, 256);
 
 	// Handle contextmenu, webglcontextlost
-	godot_js_display_setup_canvas(p_resolution.x, p_resolution.y, p_window_mode == WINDOW_MODE_FULLSCREEN, OS::get_singleton()->is_hidpi_allowed() ? 1 : 0);
+	godot_js_display_setup_canvas(p_resolution.x, p_resolution.y, (p_window_mode == WINDOW_MODE_FULLSCREEN || p_window_mode == WINDOW_MODE_EXCLUSIVE_FULLSCREEN), OS::get_singleton()->is_hidpi_allowed() ? 1 : 0);
 
 	// Check if it's windows.
 	swap_cancel_ok = godot_js_display_is_swap_ok_cancel() == 1;
@@ -746,7 +821,6 @@ DisplayServerJavaScript::~DisplayServerJavaScript() {
 
 bool DisplayServerJavaScript::has_feature(Feature p_feature) const {
 	switch (p_feature) {
-		//case FEATURE_CONSOLE_WINDOW:
 		//case FEATURE_GLOBAL_MENU:
 		//case FEATURE_HIDPI:
 		//case FEATURE_IME:
@@ -765,6 +839,8 @@ bool DisplayServerJavaScript::has_feature(Feature p_feature) const {
 		//case FEATURE_ORIENTATION:
 		case FEATURE_VIRTUAL_KEYBOARD:
 			return godot_js_display_vk_available() != 0;
+		case FEATURE_TEXT_TO_SPEECH:
+			return godot_js_display_tts_available() != 0;
 		default:
 			return false;
 	}
@@ -804,6 +880,10 @@ int DisplayServerJavaScript::screen_get_dpi(int p_screen) const {
 
 float DisplayServerJavaScript::screen_get_scale(int p_screen) const {
 	return godot_js_display_pixel_ratio_get();
+}
+
+float DisplayServerJavaScript::screen_get_refresh_rate(int p_screen) const {
+	return SCREEN_REFRESH_RATE_FALLBACK; // Javascript doesn't have much of a need for the screen refresh rate, and there's no native way to do so.
 }
 
 Vector<DisplayServer::WindowID> DisplayServerJavaScript::get_window_list() const {
@@ -899,8 +979,9 @@ Size2i DisplayServerJavaScript::window_get_real_size(WindowID p_window) const {
 }
 
 void DisplayServerJavaScript::window_set_mode(WindowMode p_mode, WindowID p_window) {
-	if (window_mode == p_mode)
+	if (window_mode == p_mode) {
 		return;
+	}
 
 	switch (p_mode) {
 		case WINDOW_MODE_WINDOWED: {
@@ -909,6 +990,7 @@ void DisplayServerJavaScript::window_set_mode(WindowMode p_mode, WindowID p_wind
 			}
 			window_mode = WINDOW_MODE_WINDOWED;
 		} break;
+		case WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
 		case WINDOW_MODE_FULLSCREEN: {
 			int result = godot_js_display_fullscreen_request();
 			ERR_FAIL_COND_MSG(result, "The request was denied. Remember that enabling fullscreen is only possible from an input callback for the HTML5 platform.");

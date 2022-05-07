@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,6 +30,7 @@
 
 #include "project_manager.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -40,11 +41,11 @@
 #include "core/os/os.h"
 #include "core/string/translation.h"
 #include "core/version.h"
-#include "core/version_hash.gen.h"
+#include "editor/editor_file_dialog.h"
+#include "editor/editor_scale.h"
+#include "editor/editor_settings.h"
+#include "editor/editor_themes.h"
 #include "editor/editor_vcs_interface.h"
-#include "editor_scale.h"
-#include "editor_settings.h"
-#include "editor_themes.h"
 #include "scene/gui/center_container.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/margin_container.h"
@@ -54,6 +55,7 @@
 #include "scene/main/window.h"
 #include "servers/display_server.h"
 #include "servers/navigation_server_3d.h"
+#include "servers/physics_server_2d.h"
 
 static inline String get_project_key_from_path(const String &dir) {
 	return dir.replace("/", "::");
@@ -99,8 +101,8 @@ private:
 	LineEdit *install_path;
 	TextureRect *status_rect;
 	TextureRect *install_status_rect;
-	FileDialog *fdialog;
-	FileDialog *fdialog_install;
+	EditorFileDialog *fdialog;
+	EditorFileDialog *fdialog_install;
 	OptionButton *vcs_metadata_selection;
 	String zip_path;
 	String zip_title;
@@ -145,7 +147,7 @@ private:
 	}
 
 	String _test_path() {
-		DirAccess *d = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		Ref<DirAccess> d = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		String valid_path, valid_install_path;
 		if (d->change_dir(project_path->get_text()) == OK) {
 			valid_path = project_path->get_text();
@@ -163,7 +165,6 @@ private:
 
 		if (valid_path.is_empty()) {
 			set_message(TTR("The path specified doesn't exist."), MESSAGE_ERROR);
-			memdelete(d);
 			get_ok_button()->set_disabled(true);
 			return "";
 		}
@@ -177,7 +178,6 @@ private:
 
 			if (valid_install_path.is_empty()) {
 				set_message(TTR("The path specified doesn't exist."), MESSAGE_ERROR, INSTALL_PATH);
-				memdelete(d);
 				get_ok_button()->set_disabled(true);
 				return "";
 			}
@@ -186,13 +186,11 @@ private:
 		if (mode == MODE_IMPORT || mode == MODE_RENAME) {
 			if (!valid_path.is_empty() && !d->file_exists("project.godot")) {
 				if (valid_path.ends_with(".zip")) {
-					FileAccess *src_f = nullptr;
-					zlib_filefunc_def io = zipio_create_io_from_file(&src_f);
+					zlib_filefunc_def io = zipio_create_io();
 
 					unzFile pkg = unzOpen2(valid_path.utf8().get_data(), &io);
 					if (!pkg) {
 						set_message(TTR("Error opening package file (it's not in ZIP format)."), MESSAGE_ERROR);
-						memdelete(d);
 						get_ok_button()->set_disabled(true);
 						unzClose(pkg);
 						return "";
@@ -203,8 +201,11 @@ private:
 						unz_file_info info;
 						char fname[16384];
 						ret = unzGetCurrentFileInfo(pkg, &info, fname, 16384, nullptr, 0, nullptr, 0);
+						if (ret != UNZ_OK) {
+							break;
+						}
 
-						if (String(fname).ends_with("project.godot")) {
+						if (String::utf8(fname).ends_with("project.godot")) {
 							break;
 						}
 
@@ -213,7 +214,6 @@ private:
 
 					if (ret == UNZ_END_OF_LIST_OF_FILE) {
 						set_message(TTR("Invalid \".zip\" project file; it doesn't contain a \"project.godot\" file."), MESSAGE_ERROR);
-						memdelete(d);
 						get_ok_button()->set_disabled(true);
 						unzClose(pkg);
 						return "";
@@ -240,14 +240,12 @@ private:
 
 					if (!is_folder_empty) {
 						set_message(TTR("Please choose an empty folder."), MESSAGE_WARNING, INSTALL_PATH);
-						memdelete(d);
 						get_ok_button()->set_disabled(true);
 						return "";
 					}
 
 				} else {
 					set_message(TTR("Please choose a \"project.godot\" or \".zip\" file."), MESSAGE_ERROR);
-					memdelete(d);
 					install_path_container->hide();
 					get_ok_button()->set_disabled(true);
 					return "";
@@ -255,7 +253,6 @@ private:
 
 			} else if (valid_path.ends_with("zip")) {
 				set_message(TTR("This directory already contains a Godot project."), MESSAGE_ERROR, INSTALL_PATH);
-				memdelete(d);
 				get_ok_button()->set_disabled(true);
 				return "";
 			}
@@ -280,7 +277,6 @@ private:
 
 			if (!is_folder_empty) {
 				set_message(TTR("The selected path is not empty. Choosing an empty folder is highly recommended."), MESSAGE_WARNING);
-				memdelete(d);
 				get_ok_button()->set_disabled(false);
 				return valid_path;
 			}
@@ -288,7 +284,6 @@ private:
 
 		set_message("");
 		set_message("", MESSAGE_SUCCESS, INSTALL_PATH);
-		memdelete(d);
 		get_ok_button()->set_disabled(false);
 		return valid_path;
 	}
@@ -364,19 +359,19 @@ private:
 		fdialog->set_current_dir(project_path->get_text());
 
 		if (mode == MODE_IMPORT) {
-			fdialog->set_file_mode(FileDialog::FILE_MODE_OPEN_FILE);
+			fdialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
 			fdialog->clear_filters();
 			fdialog->add_filter(vformat("project.godot ; %s %s", VERSION_NAME, TTR("Project")));
 			fdialog->add_filter("*.zip ; " + TTR("ZIP File"));
 		} else {
-			fdialog->set_file_mode(FileDialog::FILE_MODE_OPEN_DIR);
+			fdialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_DIR);
 		}
 		fdialog->popup_file_dialog();
 	}
 
 	void _browse_install_path() {
 		fdialog_install->set_current_dir(install_path->get_text());
-		fdialog_install->set_file_mode(FileDialog::FILE_MODE_OPEN_DIR);
+		fdialog_install->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_DIR);
 		fdialog_install->popup_file_dialog();
 	}
 
@@ -387,7 +382,7 @@ private:
 			return;
 		}
 
-		DirAccess *d = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		Ref<DirAccess> d = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		if (d->change_dir(project_path->get_text()) == OK) {
 			if (!d->dir_exists(project_name_no_edges)) {
 				if (d->make_dir(project_name_no_edges) == OK) {
@@ -406,8 +401,6 @@ private:
 				dialog_error->popup_centered();
 			}
 		}
-
-		memdelete(d);
 	}
 
 	void _text_changed(const String &p_text) {
@@ -506,8 +499,7 @@ private:
 						zip_path = project_path->get_text();
 					}
 
-					FileAccess *src_f = nullptr;
-					zlib_filefunc_def io = zipio_create_io_from_file(&src_f);
+					zlib_filefunc_def io = zipio_create_io();
 
 					unzFile pkg = unzOpen2(zip_path.utf8().get_data(), &io);
 					if (!pkg) {
@@ -524,7 +516,7 @@ private:
 						char fname[16384];
 						unzGetCurrentFileInfo(pkg, &info, fname, 16384, nullptr, 0, nullptr, 0);
 
-						String name = fname;
+						String name = String::utf8(fname);
 						if (name.ends_with("project.godot")) {
 							zip_root = name.substr(0, name.rfind("project.godot"));
 							break;
@@ -543,20 +535,20 @@ private:
 						unz_file_info info;
 						char fname[16384];
 						ret = unzGetCurrentFileInfo(pkg, &info, fname, 16384, nullptr, 0, nullptr, 0);
+						if (ret != UNZ_OK) {
+							break;
+						}
 
-						String path = fname;
+						String path = String::utf8(fname);
 
 						if (path.is_empty() || path == zip_root || !zip_root.is_subsequence_of(path)) {
 							//
 						} else if (path.ends_with("/")) { // a dir
-
 							path = path.substr(0, path.length() - 1);
 							String rel_path = path.substr(zip_root.length());
 
-							DirAccess *da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+							Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 							da->make_dir(dir.plus_file(rel_path));
-							memdelete(da);
-
 						} else {
 							Vector<uint8_t> data;
 							data.resize(info.uncompressed_size);
@@ -564,14 +556,13 @@ private:
 
 							//read
 							unzOpenCurrentFile(pkg);
-							unzReadCurrentFile(pkg, data.ptrw(), data.size());
+							ret = unzReadCurrentFile(pkg, data.ptrw(), data.size());
+							ERR_BREAK_MSG(ret < 0, vformat("An error occurred while attempting to read from file: %s. This file will not be used.", rel_path));
 							unzCloseCurrentFile(pkg);
 
-							FileAccess *f = FileAccess::open(dir.plus_file(rel_path), FileAccess::WRITE);
-
-							if (f) {
+							Ref<FileAccess> f = FileAccess::open(dir.plus_file(rel_path), FileAccess::WRITE);
+							if (f.is_valid()) {
 								f->store_buffer(data.ptr(), data.size());
-								memdelete(f);
 							} else {
 								failed_files.push_back(rel_path);
 							}
@@ -584,16 +575,16 @@ private:
 					unzClose(pkg);
 
 					if (failed_files.size()) {
-						String msg = TTR("The following files failed extraction from package:") + "\n\n";
+						String err_msg = TTR("The following files failed extraction from package:") + "\n\n";
 						for (int i = 0; i < failed_files.size(); i++) {
 							if (i > 15) {
-								msg += "\nAnd " + itos(failed_files.size() - i) + " more files.";
+								err_msg += "\nAnd " + itos(failed_files.size() - i) + " more files.";
 								break;
 							}
-							msg += failed_files[i] + "\n";
+							err_msg += failed_files[i] + "\n";
 						}
 
-						dialog_error->set_text(msg);
+						dialog_error->set_text(err_msg);
 						dialog_error->popup_centered();
 
 					} else if (!project_path->get_text().ends_with(".zip")) {
@@ -618,9 +609,8 @@ private:
 
 	void _remove_created_folder() {
 		if (!created_folder_path.is_empty()) {
-			DirAccess *d = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+			Ref<DirAccess> d = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 			d->remove(created_folder_path);
-			memdelete(d);
 
 			create_dir->set_disabled(false);
 			created_folder_path = "";
@@ -645,8 +635,10 @@ private:
 	}
 
 	void _notification(int p_what) {
-		if (p_what == NOTIFICATION_WM_CLOSE_REQUEST) {
-			_remove_created_folder();
+		switch (p_what) {
+			case NOTIFICATION_WM_CLOSE_REQUEST: {
+				_remove_created_folder();
+			} break;
 		}
 	}
 
@@ -721,10 +713,9 @@ public:
 				project_path->set_text(fav_dir);
 				fdialog->set_current_dir(fav_dir);
 			} else {
-				DirAccess *d = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+				Ref<DirAccess> d = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 				project_path->set_text(d->get_current_dir());
 				fdialog->set_current_dir(d->get_current_dir());
-				memdelete(d);
 			}
 			String proj = TTR("New Game Project");
 			project_name->set_text(proj);
@@ -811,7 +802,7 @@ public:
 
 		project_path = memnew(LineEdit);
 		project_path->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		project_path->set_structured_text_bidi_override(Control::STRUCTURED_TEXT_FILE);
+		project_path->set_structured_text_bidi_override(TextServer::STRUCTURED_TEXT_FILE);
 		pphb->add_child(project_path);
 
 		install_path_container = memnew(VBoxContainer);
@@ -826,7 +817,7 @@ public:
 
 		install_path = memnew(LineEdit);
 		install_path->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		install_path->set_structured_text_bidi_override(Control::STRUCTURED_TEXT_FILE);
+		install_path->set_structured_text_bidi_override(TextServer::STRUCTURED_TEXT_FILE);
 		iphb->add_child(install_path);
 
 		// status icon
@@ -924,12 +915,15 @@ public:
 		spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		default_files_container->add_child(spacer);
 
-		fdialog = memnew(FileDialog);
-		fdialog->set_access(FileDialog::ACCESS_FILESYSTEM);
-		fdialog_install = memnew(FileDialog);
-		fdialog_install->set_access(FileDialog::ACCESS_FILESYSTEM);
+		fdialog = memnew(EditorFileDialog);
+		fdialog->set_previews_enabled(false); //Crucial, otherwise the engine crashes.
+		fdialog->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
+		fdialog_install = memnew(EditorFileDialog);
+		fdialog_install->set_previews_enabled(false); //Crucial, otherwise the engine crashes.
+		fdialog_install->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
 		add_child(fdialog);
 		add_child(fdialog_install);
+
 		project_name->connect("text_changed", callable_mp(this, &ProjectDialog::_text_changed));
 		project_path->connect("text_changed", callable_mp(this, &ProjectDialog::_path_text_changed));
 		install_path->connect("text_changed", callable_mp(this, &ProjectDialog::_path_text_changed));
@@ -973,10 +967,12 @@ public:
 				hover = true;
 				update();
 			} break;
+
 			case NOTIFICATION_MOUSE_EXIT: {
 				hover = false;
 				update();
 			} break;
+
 			case NOTIFICATION_DRAW: {
 				if (hover) {
 					draw_style_box(get_theme_stylebox(SNAME("hover"), SNAME("Tree")), Rect2(Point2(), get_size()));
@@ -1047,6 +1043,8 @@ public:
 			return project_key == l.project_key;
 		}
 	};
+
+	bool project_opening_initiated;
 
 	ProjectList();
 	~ProjectList();
@@ -1121,12 +1119,13 @@ struct ProjectListComparator {
 };
 
 ProjectList::ProjectList() {
-	_order_option = FilterOption::NAME;
+	_order_option = FilterOption::EDIT_DATE;
 	_scroll_children = memnew(VBoxContainer);
 	_scroll_children->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	add_child(_scroll_children);
 
 	_icon_load_index = 0;
+	project_opening_initiated = false;
 }
 
 ProjectList::~ProjectList() {
@@ -1138,18 +1137,20 @@ void ProjectList::update_icons_async() {
 }
 
 void ProjectList::_notification(int p_what) {
-	if (p_what == NOTIFICATION_PROCESS) {
-		// Load icons as a coroutine to speed up launch when you have hundreds of projects
-		if (_icon_load_index < _projects.size()) {
-			Item &item = _projects.write[_icon_load_index];
-			if (item.control->icon_needs_reload) {
-				load_project_icon(_icon_load_index);
-			}
-			_icon_load_index++;
+	switch (p_what) {
+		case NOTIFICATION_PROCESS: {
+			// Load icons as a coroutine to speed up launch when you have hundreds of projects
+			if (_icon_load_index < _projects.size()) {
+				Item &item = _projects.write[_icon_load_index];
+				if (item.control->icon_needs_reload) {
+					load_project_icon(_icon_load_index);
+				}
+				_icon_load_index++;
 
-		} else {
-			set_process(false);
-		}
+			} else {
+				set_process(false);
+			}
+		} break;
 	}
 }
 
@@ -1423,7 +1424,7 @@ void ProjectList::create_project_item_control(int p_index) {
 
 		Button *show = memnew(Button);
 		// Display a folder icon if the project directory can be opened, or a "broken file" icon if it can't.
-		show->set_icon(get_theme_icon(!item.missing ? "Load" : "FileBroken", "EditorIcons"));
+		show->set_icon(get_theme_icon(!item.missing ? SNAME("Load") : SNAME("FileBroken"), SNAME("EditorIcons")));
 		show->set_flat(true);
 		if (!item.grayed) {
 			// Don't make the icon less prominent if the parent is already grayed out.
@@ -1439,7 +1440,7 @@ void ProjectList::create_project_item_control(int p_index) {
 		}
 
 		Label *fpath = memnew(Label(item.path));
-		fpath->set_structured_text_bidi_override(Control::STRUCTURED_TEXT_FILE);
+		fpath->set_structured_text_bidi_override(TextServer::STRUCTURED_TEXT_FILE);
 		path_hb->add_child(fpath);
 		fpath->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		fpath->set_modulate(Color(1, 1, 1, 0.5));
@@ -1475,7 +1476,7 @@ void ProjectList::sort_projects() {
 		bool visible = true;
 		if (!_search_term.is_empty()) {
 			String search_path;
-			if (_search_term.find("/") != -1) {
+			if (_search_term.contains("/")) {
 				// Search path will match the whole path
 				search_path = item.path;
 			} else {
@@ -1765,8 +1766,8 @@ void ProjectList::erase_selected_projects(bool p_delete_project_contents) {
 void ProjectList::_panel_draw(Node *p_hb) {
 	Control *hb = Object::cast_to<Control>(p_hb);
 
-	if (is_layout_rtl() && get_v_scrollbar()->is_visible_in_tree()) {
-		hb->draw_line(Point2(get_v_scrollbar()->get_minimum_size().x, hb->get_size().y + 1), Point2(hb->get_size().x, hb->get_size().y + 1), get_theme_color(SNAME("guide_color"), SNAME("Tree")));
+	if (is_layout_rtl() && get_v_scroll_bar()->is_visible_in_tree()) {
+		hb->draw_line(Point2(get_v_scroll_bar()->get_minimum_size().x, hb->get_size().y + 1), Point2(hb->get_size().x, hb->get_size().y + 1), get_theme_color(SNAME("guide_color"), SNAME("Tree")));
 	} else {
 		hb->draw_line(Point2(0, hb->get_size().y + 1), Point2(hb->get_size().x, hb->get_size().y + 1), get_theme_color(SNAME("guide_color"), SNAME("Tree")));
 	}
@@ -1807,7 +1808,9 @@ void ProjectList::_panel_input(const Ref<InputEvent> &p_ev, Node *p_hb) {
 
 		emit_signal(SNAME(SIGNAL_SELECTION_CHANGED));
 
-		if (!mb->is_ctrl_pressed() && mb->is_double_click()) {
+		// Do not allow opening a project more than once using a single project manager instance.
+		// Opening the same project in several editor instances at once can lead to various issues.
+		if (!mb->is_ctrl_pressed() && mb->is_double_click() && !project_opening_initiated) {
 			emit_signal(SNAME(SIGNAL_PROJECT_ASK_OPEN));
 		}
 	}
@@ -1858,6 +1861,8 @@ void ProjectList::_bind_methods() {
 	ADD_SIGNAL(MethodInfo(SIGNAL_PROJECT_ASK_OPEN));
 }
 
+ProjectManager *ProjectManager::singleton = nullptr;
+
 void ProjectManager::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED:
@@ -1865,17 +1870,20 @@ void ProjectManager::_notification(int p_what) {
 			settings_hb->set_anchors_and_offsets_preset(Control::PRESET_TOP_RIGHT);
 			update();
 		} break;
+
 		case NOTIFICATION_ENTER_TREE: {
 			search_box->set_right_icon(get_theme_icon(SNAME("Search"), SNAME("EditorIcons")));
 			search_box->set_clear_button_enabled(true);
 
 			Engine::get_singleton()->set_editor_hint(false);
 		} break;
+
 		case NOTIFICATION_RESIZED: {
 			if (open_templates->is_visible()) {
 				open_templates->popup_centered();
 			}
 		} break;
+
 		case NOTIFICATION_READY: {
 			int default_sorting = (int)EditorSettings::get_singleton()->get("project_manager/sorting_order");
 			filter_option->select(default_sorting);
@@ -1890,16 +1898,39 @@ void ProjectManager::_notification(int p_what) {
 				// to search without having to reach for their mouse
 				search_box->grab_focus();
 			}
+
+			if (asset_library) {
+				// Removes extra border margins.
+				asset_library->add_theme_style_override("panel", memnew(StyleBoxEmpty));
+			}
 		} break;
+
 		case NOTIFICATION_VISIBILITY_CHANGED: {
-			set_process_unhandled_key_input(is_visible_in_tree());
+			set_process_shortcut_input(is_visible_in_tree());
 		} break;
+
 		case NOTIFICATION_WM_CLOSE_REQUEST: {
 			_dim_window();
 		} break;
+
 		case NOTIFICATION_WM_ABOUT: {
 			_show_about();
 		} break;
+	}
+}
+
+Ref<Texture2D> ProjectManager::_file_dialog_get_icon(const String &p_path) {
+	return singleton->icon_type_cache["ObjectHR"];
+}
+
+void ProjectManager::_build_icon_type_cache(Ref<Theme> p_theme) {
+	List<StringName> tl;
+	p_theme->get_icon_list(SNAME("EditorIcons"), &tl);
+	for (List<StringName>::Element *E = tl.front(); E; E = E->next()) {
+		if (!ClassDB::class_exists(E->get())) {
+			continue;
+		}
+		icon_type_cache[E->get()] = p_theme->get_icon(E->get(), SNAME("EditorIcons"));
 	}
 }
 
@@ -1934,7 +1965,7 @@ void ProjectManager::_update_project_buttons() {
 	erase_missing_btn->set_disabled(!_project_list->is_any_project_missing());
 }
 
-void ProjectManager::unhandled_key_input(const Ref<InputEvent> &p_ev) {
+void ProjectManager::shortcut_input(const Ref<InputEvent> &p_ev) {
 	ERR_FAIL_COND(p_ev.is_null());
 
 	Ref<InputEventKey> k = p_ev;
@@ -2106,6 +2137,8 @@ void ProjectManager::_open_selected_projects() {
 		ERR_FAIL_COND(err);
 	}
 
+	_project_list->project_opening_initiated = true;
+
 	_dim_window();
 	get_tree()->quit();
 }
@@ -2241,7 +2274,7 @@ void ProjectManager::_run_project() {
 }
 
 void ProjectManager::_scan_dir(const String &path, List<String> *r_projects) {
-	DirAccessRef da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	Error error = da->change_dir(path);
 	ERR_FAIL_COND_MSG(error != OK, "Could not scan directory at: " + path);
 	da->list_dir_begin();
@@ -2363,19 +2396,18 @@ void ProjectManager::_install_project(const String &p_zip_path, const String &p_
 	npdialog->show_dialog();
 }
 
-void ProjectManager::_files_dropped(PackedStringArray p_files, int p_screen) {
+void ProjectManager::_files_dropped(PackedStringArray p_files) {
 	if (p_files.size() == 1 && p_files[0].ends_with(".zip")) {
 		const String file = p_files[0].get_file();
 		_install_project(p_files[0], file.substr(0, file.length() - 4).capitalize());
 		return;
 	}
 	Set<String> folders_set;
-	DirAccess *da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	for (int i = 0; i < p_files.size(); i++) {
 		String file = p_files[i];
 		folders_set.insert(da->dir_exists(file) ? file : file.get_base_dir());
 	}
-	memdelete(da);
 	if (folders_set.size() > 0) {
 		PackedStringArray folders;
 		for (Set<String>::Element *E = folders_set.front(); E; E = E->next()) {
@@ -2384,7 +2416,7 @@ void ProjectManager::_files_dropped(PackedStringArray p_files, int p_screen) {
 
 		bool confirm = true;
 		if (folders.size() == 1) {
-			DirAccess *dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+			Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 			if (dir->change_dir(folders[0]) == OK) {
 				dir->list_dir_begin();
 				String file = dir->get_next();
@@ -2396,7 +2428,6 @@ void ProjectManager::_files_dropped(PackedStringArray p_files, int p_screen) {
 				}
 				dir->list_dir_end();
 			}
-			memdelete(dir);
 		}
 		if (confirm) {
 			multi_scan_ask->get_ok_button()->disconnect("pressed", callable_mp(this, &ProjectManager::_scan_multiple_folders));
@@ -2459,6 +2490,8 @@ void ProjectManager::_version_button_pressed() {
 }
 
 ProjectManager::ProjectManager() {
+	singleton = this;
+
 	// load settings
 	if (!EditorSettings::get_singleton()) {
 		EditorSettings::create();
@@ -2501,20 +2534,13 @@ ProjectManager::ProjectManager() {
 				editor_set_scale(EditorSettings::get_singleton()->get("interface/editor/custom_display_scale"));
 				break;
 		}
-
-		// Define a minimum window size to prevent UI elements from overlapping or being cut off
-		DisplayServer::get_singleton()->window_set_min_size(Size2(750, 420) * EDSCALE);
-
-		// TODO: Resize windows on hiDPI displays on Windows and Linux and remove the lines below
-		float scale_factor = MAX(1, EDSCALE);
-		Vector2i window_size = DisplayServer::get_singleton()->window_get_size();
-		DisplayServer::get_singleton()->window_set_size(Vector2i(window_size.x * scale_factor, window_size.y * scale_factor));
+		EditorFileDialog::get_icon_func = &ProjectManager::_file_dialog_get_icon;
 	}
 
 	// TRANSLATORS: This refers to the application where users manage their Godot projects.
-	DisplayServer::get_singleton()->window_set_title(VERSION_NAME + String(" - ") + TTR("Project Manager"));
+	DisplayServer::get_singleton()->window_set_title(VERSION_NAME + String(" - ") + TTR("Project Manager", "Application"));
 
-	FileDialog::set_default_show_hidden_files(EditorSettings::get_singleton()->get("filesystem/file_dialog/show_hidden_files"));
+	EditorFileDialog::set_default_show_hidden_files(EditorSettings::get_singleton()->get("filesystem/file_dialog/show_hidden_files"));
 
 	set_anchors_and_offsets_preset(Control::PRESET_WIDE);
 	set_theme(create_custom_theme());
@@ -2537,7 +2563,6 @@ ProjectManager::ProjectManager() {
 	tabs = memnew(TabContainer);
 	center_box->add_child(tabs);
 	tabs->set_anchors_and_offsets_preset(Control::PRESET_WIDE);
-	tabs->set_tab_alignment(TabContainer::ALIGNMENT_LEFT);
 	tabs->connect("tab_changed", callable_mp(this, &ProjectManager::_on_tab_changed));
 
 	HBoxContainer *projects_hb = memnew(HBoxContainer);
@@ -2579,9 +2604,9 @@ ProjectManager::ProjectManager() {
 		hb->add_child(filter_option);
 
 		Vector<String> sort_filter_titles;
+		sort_filter_titles.push_back(TTR("Last Edited"));
 		sort_filter_titles.push_back(TTR("Name"));
 		sort_filter_titles.push_back(TTR("Path"));
-		sort_filter_titles.push_back(TTR("Last Edited"));
 
 		for (int i = 0; i < sort_filter_titles.size(); i++) {
 			filter_option->add_item(sort_filter_titles[i]);
@@ -2745,9 +2770,10 @@ ProjectManager::ProjectManager() {
 		language_restart_ask->get_cancel_button()->set_text(TTR("Continue"));
 		add_child(language_restart_ask);
 
-		scan_dir = memnew(FileDialog);
-		scan_dir->set_access(FileDialog::ACCESS_FILESYSTEM);
-		scan_dir->set_file_mode(FileDialog::FILE_MODE_OPEN_DIR);
+		scan_dir = memnew(EditorFileDialog);
+		scan_dir->set_previews_enabled(false);
+		scan_dir->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
+		scan_dir->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_DIR);
 		scan_dir->set_title(TTR("Select a Folder to Scan")); // must be after mode or it's overridden
 		scan_dir->set_current_dir(EditorSettings::get_singleton()->get("filesystem/directories/default_project_path"));
 		add_child(scan_dir);
@@ -2811,11 +2837,13 @@ ProjectManager::ProjectManager() {
 
 		about = memnew(EditorAbout);
 		add_child(about);
+
+		_build_icon_type_cache(get_theme());
 	}
 
 	_load_recent_projects();
 
-	DirAccessRef dir_access = DirAccess::create(DirAccess::AccessType::ACCESS_FILESYSTEM);
+	Ref<DirAccess> dir_access = DirAccess::create(DirAccess::AccessType::ACCESS_FILESYSTEM);
 
 	String default_project_path = EditorSettings::get_singleton()->get("filesystem/directories/default_project_path");
 	if (!dir_access->dir_exists(default_project_path)) {
@@ -2839,10 +2867,32 @@ ProjectManager::ProjectManager() {
 
 	SceneTree::get_singleton()->get_root()->connect("files_dropped", callable_mp(this, &ProjectManager::_files_dropped));
 
+	// Define a minimum window size to prevent UI elements from overlapping or being cut off
+	DisplayServer::get_singleton()->window_set_min_size(Size2(750, 420) * EDSCALE);
+
+	// Resize the bootsplash window based on Editor display scale EDSCALE.
+	float scale_factor = MAX(1, EDSCALE);
+	if (scale_factor > 1.0) {
+		Vector2i window_size = DisplayServer::get_singleton()->window_get_size();
+		Vector2i screen_size = DisplayServer::get_singleton()->screen_get_size();
+		Vector2i screen_position = DisplayServer::get_singleton()->screen_get_position();
+
+		window_size *= scale_factor;
+
+		DisplayServer::get_singleton()->window_set_size(window_size);
+		if (screen_size != Vector2i()) {
+			Vector2i window_position;
+			window_position.x = screen_position.x + (screen_size.x - window_size.x) / 2;
+			window_position.y = screen_position.y + (screen_size.y - window_size.y) / 2;
+			DisplayServer::get_singleton()->window_set_position(window_position);
+		}
+	}
+
 	OS::get_singleton()->set_low_processor_usage_mode(true);
 }
 
 ProjectManager::~ProjectManager() {
+	singleton = nullptr;
 	if (EditorSettings::get_singleton()) {
 		EditorSettings::destroy();
 	}

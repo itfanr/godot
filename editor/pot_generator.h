@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -49,7 +49,7 @@ class POTGenerator {
 	OrderedHashMap<String, Vector<MsgidData>> all_translation_strings;
 
 	void _write_to_pot(const String &p_file);
-	void _write_msgid(FileAccess *r_file, const String &p_id, bool p_plural);
+	void _write_msgid(Ref<FileAccess> r_file, const String &p_id, bool p_plural);
 	void _add_new_msgid(const String &p_msgid, const String &p_context, const String &p_plural, const String &p_location);
 
 #ifdef DEBUG_POT

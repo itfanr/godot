@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,6 +31,8 @@
 #include "animation_blend_space_1d_editor.h"
 
 #include "core/os/keyboard.h"
+#include "editor/editor_file_dialog.h"
+#include "editor/editor_node.h"
 #include "editor/editor_scale.h"
 #include "scene/animation/animation_blend_tree.h"
 
@@ -86,7 +88,7 @@ void AnimationNodeBlendSpace1DEditor::_blend_space_gui_input(const Ref<InputEven
 			}
 
 			int idx = menu->get_item_count();
-			menu->add_item(vformat("Add %s", name), idx);
+			menu->add_item(vformat(TTR("Add %s"), name), idx);
 			menu->set_item_metadata(idx, E);
 		}
 
@@ -529,39 +531,42 @@ void AnimationNodeBlendSpace1DEditor::_open_editor() {
 }
 
 void AnimationNodeBlendSpace1DEditor::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
-		error_panel->add_theme_style_override("panel", get_theme_stylebox(SNAME("bg"), SNAME("Tree")));
-		error_label->add_theme_color_override("font_color", get_theme_color(SNAME("error_color"), SNAME("Editor")));
-		panel->add_theme_style_override("panel", get_theme_stylebox(SNAME("bg"), SNAME("Tree")));
-		tool_blend->set_icon(get_theme_icon(SNAME("EditPivot"), SNAME("EditorIcons")));
-		tool_select->set_icon(get_theme_icon(SNAME("ToolSelect"), SNAME("EditorIcons")));
-		tool_create->set_icon(get_theme_icon(SNAME("EditKey"), SNAME("EditorIcons")));
-		tool_erase->set_icon(get_theme_icon(SNAME("Remove"), SNAME("EditorIcons")));
-		snap->set_icon(get_theme_icon(SNAME("SnapGrid"), SNAME("EditorIcons")));
-		open_editor->set_icon(get_theme_icon(SNAME("Edit"), SNAME("EditorIcons")));
-	}
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE:
+		case NOTIFICATION_THEME_CHANGED: {
+			error_panel->add_theme_style_override("panel", get_theme_stylebox(SNAME("bg"), SNAME("Tree")));
+			error_label->add_theme_color_override("font_color", get_theme_color(SNAME("error_color"), SNAME("Editor")));
+			panel->add_theme_style_override("panel", get_theme_stylebox(SNAME("bg"), SNAME("Tree")));
+			tool_blend->set_icon(get_theme_icon(SNAME("EditPivot"), SNAME("EditorIcons")));
+			tool_select->set_icon(get_theme_icon(SNAME("ToolSelect"), SNAME("EditorIcons")));
+			tool_create->set_icon(get_theme_icon(SNAME("EditKey"), SNAME("EditorIcons")));
+			tool_erase->set_icon(get_theme_icon(SNAME("Remove"), SNAME("EditorIcons")));
+			snap->set_icon(get_theme_icon(SNAME("SnapGrid"), SNAME("EditorIcons")));
+			open_editor->set_icon(get_theme_icon(SNAME("Edit"), SNAME("EditorIcons")));
+		} break;
 
-	if (p_what == NOTIFICATION_PROCESS) {
-		String error;
+		case NOTIFICATION_PROCESS: {
+			String error;
 
-		if (!AnimationTreeEditor::get_singleton()->get_tree()->is_active()) {
-			error = TTR("AnimationTree is inactive.\nActivate to enable playback, check node warnings if activation fails.");
-		} else if (AnimationTreeEditor::get_singleton()->get_tree()->is_state_invalid()) {
-			error = AnimationTreeEditor::get_singleton()->get_tree()->get_invalid_state_reason();
-		}
-
-		if (error != error_label->get_text()) {
-			error_label->set_text(error);
-			if (!error.is_empty()) {
-				error_panel->show();
-			} else {
-				error_panel->hide();
+			if (!AnimationTreeEditor::get_singleton()->get_tree()->is_active()) {
+				error = TTR("AnimationTree is inactive.\nActivate to enable playback, check node warnings if activation fails.");
+			} else if (AnimationTreeEditor::get_singleton()->get_tree()->is_state_invalid()) {
+				error = AnimationTreeEditor::get_singleton()->get_tree()->get_invalid_state_reason();
 			}
-		}
-	}
 
-	if (p_what == NOTIFICATION_VISIBILITY_CHANGED) {
-		set_process(is_visible_in_tree());
+			if (error != error_label->get_text()) {
+				error_label->set_text(error);
+				if (!error.is_empty()) {
+					error_panel->show();
+				} else {
+					error_panel->hide();
+				}
+			}
+		} break;
+
+		case NOTIFICATION_VISIBILITY_CHANGED: {
+			set_process(is_visible_in_tree());
+		} break;
 	}
 }
 
@@ -589,7 +594,6 @@ AnimationNodeBlendSpace1DEditor *AnimationNodeBlendSpace1DEditor::singleton = nu
 
 AnimationNodeBlendSpace1DEditor::AnimationNodeBlendSpace1DEditor() {
 	singleton = this;
-	updating = false;
 
 	HBoxContainer *top_hb = memnew(HBoxContainer);
 	add_child(top_hb);
@@ -739,10 +743,6 @@ AnimationNodeBlendSpace1DEditor::AnimationNodeBlendSpace1DEditor() {
 	open_file->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);
 	open_file->connect("file_selected", callable_mp(this, &AnimationNodeBlendSpace1DEditor::_file_opened));
 	undo_redo = EditorNode::get_undo_redo();
-
-	selected_point = -1;
-	dragging_selected = false;
-	dragging_selected_attempt = false;
 
 	set_custom_minimum_size(Size2(0, 150 * EDSCALE));
 }

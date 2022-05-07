@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -35,12 +35,10 @@
 
 #include "core/math/math_defs.h"
 #include "core/templates/map.h"
+#include "core/templates/thread_work_pool.h"
 #include "nav_utils.h"
-#include <KdTree.h>
 
-/**
-	@author AndreaCatania
-*/
+#include <KdTree.h>
 
 class NavRegion;
 class RvoAgent;
@@ -83,8 +81,12 @@ class NavMap : public NavRid {
 	/// Change the id each time the map is updated.
 	uint32_t map_update_id = 0;
 
+	/// Pooled threads for computing steps
+	ThreadWorkPool step_work_pool;
+
 public:
-	NavMap() {}
+	NavMap();
+	~NavMap();
 
 	void set_up(Vector3 p_up);
 	Vector3 get_up() const {
@@ -107,6 +109,7 @@ public:
 	Vector3 get_closest_point_to_segment(const Vector3 &p_from, const Vector3 &p_to, const bool p_use_collision) const;
 	Vector3 get_closest_point(const Vector3 &p_point) const;
 	Vector3 get_closest_point_normal(const Vector3 &p_point) const;
+	gd::ClosestPointQueryResult get_closest_point_info(const Vector3 &p_point) const;
 	RID get_closest_point_owner(const Vector3 &p_point) const;
 
 	void add_region(NavRegion *p_region);

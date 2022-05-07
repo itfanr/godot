@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -293,9 +293,9 @@ SETGET_STRUCT(AABB, Vector3, position)
 SETGET_STRUCT(AABB, Vector3, size)
 SETGET_STRUCT_FUNC(AABB, Vector3, end, set_end, get_end)
 
-SETGET_STRUCT_CUSTOM(Transform2D, Vector2, x, elements[0])
-SETGET_STRUCT_CUSTOM(Transform2D, Vector2, y, elements[1])
-SETGET_STRUCT_CUSTOM(Transform2D, Vector2, origin, elements[2])
+SETGET_STRUCT_CUSTOM(Transform2D, Vector2, x, columns[0])
+SETGET_STRUCT_CUSTOM(Transform2D, Vector2, y, columns[1])
+SETGET_STRUCT_CUSTOM(Transform2D, Vector2, origin, columns[2])
 
 SETGET_NUMBER_STRUCT_CUSTOM(Plane, double, x, normal.x)
 SETGET_NUMBER_STRUCT_CUSTOM(Plane, double, y, normal.y)
@@ -308,9 +308,9 @@ SETGET_NUMBER_STRUCT(Quaternion, double, y)
 SETGET_NUMBER_STRUCT(Quaternion, double, z)
 SETGET_NUMBER_STRUCT(Quaternion, double, w)
 
-SETGET_STRUCT_FUNC_INDEX(Basis, Vector3, x, set_axis, get_axis, 0)
-SETGET_STRUCT_FUNC_INDEX(Basis, Vector3, y, set_axis, get_axis, 1)
-SETGET_STRUCT_FUNC_INDEX(Basis, Vector3, z, set_axis, get_axis, 2)
+SETGET_STRUCT_FUNC_INDEX(Basis, Vector3, x, set_column, get_column, 0)
+SETGET_STRUCT_FUNC_INDEX(Basis, Vector3, y, set_column, get_column, 1)
+SETGET_STRUCT_FUNC_INDEX(Basis, Vector3, z, set_column, get_column, 2)
 
 SETGET_STRUCT(Transform3D, Basis, basis)
 SETGET_STRUCT(Transform3D, Vector3, origin)

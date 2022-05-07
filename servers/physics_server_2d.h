@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -663,7 +663,7 @@ class PhysicsShapeQueryParameters2D : public RefCounted {
 
 	PhysicsDirectSpaceState2D::ShapeParameters parameters;
 
-	RES shape_ref;
+	Ref<Resource> shape_ref;
 
 protected:
 	static void _bind_methods();
@@ -671,8 +671,8 @@ protected:
 public:
 	const PhysicsDirectSpaceState2D::ShapeParameters &get_parameters() const { return parameters; }
 
-	void set_shape(const RES &p_shape_ref);
-	RES get_shape() const { return shape_ref; }
+	void set_shape(const Ref<Resource> &p_shape_ref);
+	Ref<Resource> get_shape() const { return shape_ref; }
 
 	void set_shape_rid(const RID &p_shape);
 	RID get_shape_rid() const { return parameters.shape_rid; }

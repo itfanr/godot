@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,7 +28,11 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#include "core/math/transform_2d.h" // Includes rect2.h but Rect2 needs Transform2D
+#include "rect2.h"
+
+#include "core/math/rect2i.h"
+#include "core/math/transform_2d.h"
+#include "core/string/ustring.h"
 
 bool Rect2::is_equal_approx(const Rect2 &p_rect) const {
 	return position.is_equal_approx(p_rect.position) && size.is_equal_approx(p_rect.size);
@@ -197,33 +201,33 @@ next4:
 		Vector2(position.x + size.x, position.y + size.y),
 	};
 
-	real_t maxa = p_xform.elements[0].dot(xf_points2[0]);
+	real_t maxa = p_xform.columns[0].dot(xf_points2[0]);
 	real_t mina = maxa;
 
-	real_t dp = p_xform.elements[0].dot(xf_points2[1]);
+	real_t dp = p_xform.columns[0].dot(xf_points2[1]);
 	maxa = MAX(dp, maxa);
 	mina = MIN(dp, mina);
 
-	dp = p_xform.elements[0].dot(xf_points2[2]);
+	dp = p_xform.columns[0].dot(xf_points2[2]);
 	maxa = MAX(dp, maxa);
 	mina = MIN(dp, mina);
 
-	dp = p_xform.elements[0].dot(xf_points2[3]);
+	dp = p_xform.columns[0].dot(xf_points2[3]);
 	maxa = MAX(dp, maxa);
 	mina = MIN(dp, mina);
 
-	real_t maxb = p_xform.elements[0].dot(xf_points[0]);
+	real_t maxb = p_xform.columns[0].dot(xf_points[0]);
 	real_t minb = maxb;
 
-	dp = p_xform.elements[0].dot(xf_points[1]);
+	dp = p_xform.columns[0].dot(xf_points[1]);
 	maxb = MAX(dp, maxb);
 	minb = MIN(dp, minb);
 
-	dp = p_xform.elements[0].dot(xf_points[2]);
+	dp = p_xform.columns[0].dot(xf_points[2]);
 	maxb = MAX(dp, maxb);
 	minb = MIN(dp, minb);
 
-	dp = p_xform.elements[0].dot(xf_points[3]);
+	dp = p_xform.columns[0].dot(xf_points[3]);
 	maxb = MAX(dp, maxb);
 	minb = MIN(dp, minb);
 
@@ -234,33 +238,33 @@ next4:
 		return false;
 	}
 
-	maxa = p_xform.elements[1].dot(xf_points2[0]);
+	maxa = p_xform.columns[1].dot(xf_points2[0]);
 	mina = maxa;
 
-	dp = p_xform.elements[1].dot(xf_points2[1]);
+	dp = p_xform.columns[1].dot(xf_points2[1]);
 	maxa = MAX(dp, maxa);
 	mina = MIN(dp, mina);
 
-	dp = p_xform.elements[1].dot(xf_points2[2]);
+	dp = p_xform.columns[1].dot(xf_points2[2]);
 	maxa = MAX(dp, maxa);
 	mina = MIN(dp, mina);
 
-	dp = p_xform.elements[1].dot(xf_points2[3]);
+	dp = p_xform.columns[1].dot(xf_points2[3]);
 	maxa = MAX(dp, maxa);
 	mina = MIN(dp, mina);
 
-	maxb = p_xform.elements[1].dot(xf_points[0]);
+	maxb = p_xform.columns[1].dot(xf_points[0]);
 	minb = maxb;
 
-	dp = p_xform.elements[1].dot(xf_points[1]);
+	dp = p_xform.columns[1].dot(xf_points[1]);
 	maxb = MAX(dp, maxb);
 	minb = MIN(dp, minb);
 
-	dp = p_xform.elements[1].dot(xf_points[2]);
+	dp = p_xform.columns[1].dot(xf_points[2]);
 	maxb = MAX(dp, maxb);
 	minb = MIN(dp, minb);
 
-	dp = p_xform.elements[1].dot(xf_points[3]);
+	dp = p_xform.columns[1].dot(xf_points[3]);
 	maxb = MAX(dp, maxb);
 	minb = MIN(dp, minb);
 
@@ -278,6 +282,6 @@ Rect2::operator String() const {
 	return "[P: " + position.operator String() + ", S: " + size + "]";
 }
 
-Rect2i::operator String() const {
-	return "[P: " + position.operator String() + ", S: " + size + "]";
+Rect2::operator Rect2i() const {
+	return Rect2i(position, size);
 }

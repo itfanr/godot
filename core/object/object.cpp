@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -402,13 +402,9 @@ void Object::set(const StringName &p_name, const Variant &p_value, bool *r_valid
 #endif
 	}
 
-	//try built-in setgetter
+	// Try built-in setter.
 	{
 		if (ClassDB::set_property(this, p_name, p_value, r_valid)) {
-			/*
-			if (r_valid)
-				*r_valid=true;
-			*/
 			return;
 		}
 	}
@@ -420,22 +416,22 @@ void Object::set(const StringName &p_name, const Variant &p_value, bool *r_valid
 		}
 		return;
 
-	} else if (p_name == CoreStringNames::get_singleton()->_meta) {
-		//set_meta(p_name,p_value);
-		metadata = p_value.duplicate();
-		if (r_valid) {
-			*r_valid = true;
+	} else {
+		OrderedHashMap<StringName, Variant>::Element *E = metadata_properties.getptr(p_name);
+		if (E) {
+			E->get() = p_value;
+			if (r_valid) {
+				*r_valid = true;
+			}
+			return;
+		} else if (p_name.operator String().begins_with("metadata/")) {
+			// Must exist, otherwise duplicate() will not work.
+			set_meta(p_name.operator String().replace_first("metadata/", ""), p_value);
+			if (r_valid) {
+				*r_valid = true;
+			}
+			return;
 		}
-		return;
-	}
-
-	//something inside the object... :|
-	bool success = _setv(p_name, p_value);
-	if (success) {
-		if (r_valid) {
-			*r_valid = true;
-		}
-		return;
 	}
 
 #ifdef TOOLS_ENABLED
@@ -450,6 +446,15 @@ void Object::set(const StringName &p_name, const Variant &p_value, bool *r_valid
 		}
 	}
 #endif
+
+	// Something inside the object... :|
+	bool success = _setv(p_name, p_value);
+	if (success) {
+		if (r_valid) {
+			*r_valid = true;
+		}
+		return;
+	}
 
 	if (r_valid) {
 		*r_valid = false;
@@ -485,7 +490,7 @@ Variant Object::get(const StringName &p_name, bool *r_valid) const {
 #endif
 	}
 
-	//try built-in setgetter
+	// Try built-in getter.
 	{
 		if (ClassDB::get_property(const_cast<Object *>(this), p_name, ret)) {
 			if (r_valid) {
@@ -501,24 +506,18 @@ Variant Object::get(const StringName &p_name, bool *r_valid) const {
 			*r_valid = true;
 		}
 		return ret;
+	}
 
-	} else if (p_name == CoreStringNames::get_singleton()->_meta) {
-		ret = metadata;
+	const OrderedHashMap<StringName, Variant>::Element *E = metadata_properties.getptr(p_name);
+
+	if (E) {
+		ret = E->get();
 		if (r_valid) {
 			*r_valid = true;
 		}
 		return ret;
 
 	} else {
-		//something inside the object... :|
-		bool success = _getv(p_name, ret);
-		if (success) {
-			if (r_valid) {
-				*r_valid = true;
-			}
-			return ret;
-		}
-
 #ifdef TOOLS_ENABLED
 		if (script_instance) {
 			bool valid;
@@ -531,6 +530,14 @@ Variant Object::get(const StringName &p_name, bool *r_valid) const {
 			}
 		}
 #endif
+		// Something inside the object... :|
+		bool success = _getv(p_name, ret);
+		if (success) {
+			if (r_valid) {
+				*r_valid = true;
+			}
+			return ret;
+		}
 
 		if (r_valid) {
 			*r_valid = false;
@@ -629,8 +636,12 @@ void Object::get_property_list(List<PropertyInfo> *p_list, bool p_reversed) cons
 	}
 
 	if (_extension) {
-		p_list->push_back(PropertyInfo(Variant::NIL, _extension->class_name, PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_CATEGORY));
-		ClassDB::get_property_list(_extension->class_name, p_list, true, this);
+		const ObjectNativeExtension *current_extension = _extension;
+		while (current_extension) {
+			p_list->push_back(PropertyInfo(Variant::NIL, current_extension->class_name, PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_CATEGORY));
+			ClassDB::get_property_list(current_extension->class_name, p_list, true, this);
+			current_extension = current_extension->parent;
+		}
 	}
 
 	if (_extension && _extension->get_property_list) {
@@ -649,12 +660,19 @@ void Object::get_property_list(List<PropertyInfo> *p_list, bool p_reversed) cons
 	if (!is_class("Script")) { // can still be set, but this is for user-friendliness
 		p_list->push_back(PropertyInfo(Variant::OBJECT, "script", PROPERTY_HINT_RESOURCE_TYPE, "Script", PROPERTY_USAGE_DEFAULT));
 	}
-	if (!metadata.is_empty()) {
-		p_list->push_back(PropertyInfo(Variant::DICTIONARY, "__meta__", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NO_EDITOR | PROPERTY_USAGE_INTERNAL));
-	}
+
 	if (script_instance && !p_reversed) {
 		p_list->push_back(PropertyInfo(Variant::NIL, "Script Variables", PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_CATEGORY));
 		script_instance->get_property_list(p_list);
+	}
+
+	for (OrderedHashMap<StringName, Variant>::ConstElement K = metadata.front(); K; K = K.next()) {
+		PropertyInfo pi = PropertyInfo(K.value().get_type(), "metadata/" + K.key().operator String());
+		if (K.value().get_type() == Variant::OBJECT) {
+			pi.hint = PROPERTY_HINT_RESOURCE_TYPE;
+			pi.hint_string = "Resource";
+		}
+		p_list->push_back(pi);
 	}
 }
 
@@ -684,7 +702,7 @@ Variant Object::_call_bind(const Variant **p_args, int p_argcount, Callable::Cal
 
 	StringName method = *p_args[0];
 
-	return call(method, &p_args[1], p_argcount - 1, r_error);
+	return callp(method, &p_args[1], p_argcount - 1, r_error);
 }
 
 Variant Object::_call_deferred_bind(const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
@@ -705,7 +723,7 @@ Variant Object::_call_deferred_bind(const Variant **p_args, int p_argcount, Call
 
 	StringName method = *p_args[0];
 
-	MessageQueue::get_singleton()->push_call(get_instance_id(), method, &p_args[1], p_argcount - 1, true);
+	MessageQueue::get_singleton()->push_callp(get_instance_id(), method, &p_args[1], p_argcount - 1, true);
 
 	return Variant();
 }
@@ -755,31 +773,14 @@ Variant Object::callv(const StringName &p_method, const Array &p_args) {
 	}
 
 	Callable::CallError ce;
-	Variant ret = call(p_method, argptrs, p_args.size(), ce);
+	Variant ret = callp(p_method, argptrs, p_args.size(), ce);
 	if (ce.error != Callable::CallError::CALL_OK) {
 		ERR_FAIL_V_MSG(Variant(), "Error calling method from 'callv': " + Variant::get_call_error_text(this, p_method, argptrs, p_args.size(), ce) + ".");
 	}
 	return ret;
 }
 
-Variant Object::call(const StringName &p_name, VARIANT_ARG_DECLARE) {
-	VARIANT_ARGPTRS;
-
-	int argc = 0;
-	for (int i = 0; i < VARIANT_ARG_MAX; i++) {
-		if (argptr[i]->get_type() == Variant::NIL) {
-			break;
-		}
-		argc++;
-	}
-
-	Callable::CallError error;
-
-	Variant ret = call(p_name, argptr, argc, error);
-	return ret;
-}
-
-Variant Object::call(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
+Variant Object::callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
 	r_error.error = Callable::CallError::CALL_OK;
 
 	if (p_method == CoreStringNames::get_singleton()->_free) {
@@ -813,7 +814,7 @@ Variant Object::call(const StringName &p_method, const Variant **p_args, int p_a
 	OBJ_DEBUG_LOCK
 
 	if (script_instance) {
-		ret = script_instance->call(p_method, p_args, p_argcount, r_error);
+		ret = script_instance->callp(p_method, p_args, p_argcount, r_error);
 		//force jumptable
 		switch (r_error.error) {
 			case Callable::CallError::CALL_OK:
@@ -863,7 +864,9 @@ String Object::to_string() {
 		}
 	}
 	if (_extension && _extension->to_string) {
-		return _extension->to_string(_extension_instance);
+		String ret;
+		_extension->to_string(_extension_instance, &ret);
+		return ret;
 	}
 	return "[" + get_class() + ":" + itos(get_instance_id()) + "]";
 }
@@ -933,20 +936,38 @@ bool Object::has_meta(const StringName &p_name) const {
 
 void Object::set_meta(const StringName &p_name, const Variant &p_value) {
 	if (p_value.get_type() == Variant::NIL) {
-		metadata.erase(p_name);
+		if (metadata.has(p_name)) {
+			metadata.erase(p_name);
+			metadata_properties.erase("metadata/" + p_name.operator String());
+			notify_property_list_changed();
+		}
 		return;
 	}
 
-	metadata[p_name] = p_value;
+	OrderedHashMap<StringName, Variant>::Element E = metadata.find(p_name);
+	if (E) {
+		E.value() = p_value;
+	} else {
+		ERR_FAIL_COND(!p_name.operator String().is_valid_identifier());
+		E = metadata.insert(p_name, p_value);
+		metadata_properties["metadata/" + p_name.operator String()] = E;
+		notify_property_list_changed();
+	}
 }
 
-Variant Object::get_meta(const StringName &p_name) const {
-	ERR_FAIL_COND_V_MSG(!metadata.has(p_name), Variant(), "The object does not have any 'meta' values with the key '" + p_name + "'.");
+Variant Object::get_meta(const StringName &p_name, const Variant &p_default) const {
+	if (!metadata.has(p_name)) {
+		if (p_default != Variant()) {
+			return p_default;
+		} else {
+			ERR_FAIL_V_MSG(Variant(), "The object does not have any 'meta' values with the key '" + p_name + "'.");
+		}
+	}
 	return metadata[p_name];
 }
 
 void Object::remove_meta(const StringName &p_name) {
-	metadata.erase(p_name);
+	set_meta(p_name, Variant());
 }
 
 Array Object::_get_property_list_bind() const {
@@ -972,20 +993,16 @@ Array Object::_get_method_list_bind() const {
 Vector<StringName> Object::_get_meta_list_bind() const {
 	Vector<StringName> _metaret;
 
-	List<Variant> keys;
-	metadata.get_key_list(&keys);
-	for (const Variant &E : keys) {
-		_metaret.push_back(E);
+	for (OrderedHashMap<StringName, Variant>::ConstElement K = metadata.front(); K; K = K.next()) {
+		_metaret.push_back(K.key());
 	}
 
 	return _metaret;
 }
 
 void Object::get_meta_list(List<StringName> *p_list) const {
-	List<Variant> keys;
-	metadata.get_key_list(&keys);
-	for (const Variant &E : keys) {
-		p_list->push_back(E);
+	for (OrderedHashMap<StringName, Variant>::ConstElement K = metadata.front(); K; K = K.next()) {
+		p_list->push_back(K.key());
 	}
 }
 
@@ -1010,15 +1027,15 @@ struct _ObjectSignalDisconnectData {
 	Callable callable;
 };
 
-Variant Object::_emit_signal(const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
+Error Object::_emit_signal(const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
 	r_error.error = Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS;
 
-	ERR_FAIL_COND_V(p_argcount < 1, Variant());
+	ERR_FAIL_COND_V(p_argcount < 1, Error::ERR_INVALID_PARAMETER);
 	if (p_args[0]->get_type() != Variant::STRING_NAME && p_args[0]->get_type() != Variant::STRING) {
 		r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 		r_error.argument = 0;
 		r_error.expected = Variant::STRING_NAME;
-		ERR_FAIL_COND_V(p_args[0]->get_type() != Variant::STRING_NAME && p_args[0]->get_type() != Variant::STRING, Variant());
+		ERR_FAIL_COND_V(p_args[0]->get_type() != Variant::STRING_NAME && p_args[0]->get_type() != Variant::STRING, Error::ERR_INVALID_PARAMETER);
 	}
 
 	r_error.error = Callable::CallError::CALL_OK;
@@ -1032,12 +1049,10 @@ Variant Object::_emit_signal(const Variant **p_args, int p_argcount, Callable::C
 		args = &p_args[1];
 	}
 
-	emit_signal(signal, args, argc);
-
-	return Variant();
+	return emit_signalp(signal, args, argc);
 }
 
-Error Object::emit_signal(const StringName &p_name, const Variant **p_args, int p_argcount) {
+Error Object::emit_signalp(const StringName &p_name, const Variant **p_args, int p_argcount) {
 	if (_block_signals) {
 		return ERR_CANT_ACQUIRE_RESOURCE; //no emit, signals blocked
 	}
@@ -1096,7 +1111,7 @@ Error Object::emit_signal(const StringName &p_name, const Variant **p_args, int 
 		}
 
 		if (c.flags & CONNECT_DEFERRED) {
-			MessageQueue::get_singleton()->push_callable(c.callable, args, argc, true);
+			MessageQueue::get_singleton()->push_callablep(c.callable, args, argc, true);
 		} else {
 			Callable::CallError ce;
 			_emitting = true;
@@ -1142,21 +1157,6 @@ Error Object::emit_signal(const StringName &p_name, const Variant **p_args, int 
 	}
 
 	return err;
-}
-
-Error Object::emit_signal(const StringName &p_name, VARIANT_ARG_DECLARE) {
-	VARIANT_ARGPTRS;
-
-	int argc = 0;
-
-	for (int i = 0; i < VARIANT_ARG_MAX; i++) {
-		if (argptr[i]->get_type() == Variant::NIL) {
-			break;
-		}
-		argc++;
-	}
-
-	return emit_signal(p_name, argptr, argc);
 }
 
 void Object::_add_user_signal(const String &p_name, const Array &p_args) {
@@ -1475,7 +1475,7 @@ String Object::tr_n(const StringName &p_message, const StringName &p_message_plu
 void Object::_clear_internal_resource_paths(const Variant &p_var) {
 	switch (p_var.get_type()) {
 		case Variant::OBJECT: {
-			RES r = p_var;
+			Ref<Resource> r = p_var;
 			if (!r.is_valid()) {
 				return;
 			}
@@ -1562,7 +1562,7 @@ void Object::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_meta", "name", "value"), &Object::set_meta);
 	ClassDB::bind_method(D_METHOD("remove_meta", "name"), &Object::remove_meta);
-	ClassDB::bind_method(D_METHOD("get_meta", "name"), &Object::get_meta);
+	ClassDB::bind_method(D_METHOD("get_meta", "name", "default"), &Object::get_meta, DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("has_meta", "name"), &Object::has_meta);
 	ClassDB::bind_method(D_METHOD("get_meta_list"), &Object::_get_meta_list_bind);
 
@@ -1651,10 +1651,6 @@ void Object::_bind_methods() {
 	BIND_ENUM_CONSTANT(CONNECT_PERSIST);
 	BIND_ENUM_CONSTANT(CONNECT_ONESHOT);
 	BIND_ENUM_CONSTANT(CONNECT_REFERENCE_COUNTED);
-}
-
-void Object::call_deferred(const StringName &p_method, VARIANT_ARG_DECLARE) {
-	MessageQueue::get_singleton()->push_call(this, p_method, VARIANT_ARG_PASS);
 }
 
 void Object::set_deferred(const StringName &p_property, const Variant &p_value) {
@@ -1851,6 +1847,13 @@ Object::Object() {
 	_construct_object(false);
 }
 
+void Object::detach_from_objectdb() {
+	if (_instance_id != ObjectID()) {
+		ObjectDB::remove_instance(this);
+		_instance_id = ObjectID();
+	}
+}
+
 Object::~Object() {
 	if (script_instance) {
 		memdelete(script_instance);
@@ -1890,8 +1893,10 @@ Object::~Object() {
 		c.signal.get_object()->_disconnect(c.signal.get_name(), c.callable, true);
 	}
 
-	ObjectDB::remove_instance(this);
-	_instance_id = ObjectID();
+	if (_instance_id != ObjectID()) {
+		ObjectDB::remove_instance(this);
+		_instance_id = ObjectID();
+	}
 	_predelete_ok = 2;
 
 	if (_instance_bindings != nullptr) {

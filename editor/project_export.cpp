@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,10 +39,10 @@
 #include "core/os/os.h"
 #include "core/string/optimized_translation.h"
 #include "core/version_generated.gen.h"
-#include "editor_data.h"
-#include "editor_node.h"
-#include "editor_scale.h"
-#include "editor_settings.h"
+#include "editor/editor_file_dialog.h"
+#include "editor/editor_node.h"
+#include "editor/editor_scale.h"
+#include "editor/editor_settings.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/margin_container.h"
 #include "scene/gui/scroll_container.h"
@@ -61,11 +61,16 @@ void ProjectExportDialog::_notification(int p_what) {
 				EditorSettings::get_singleton()->set_project_metadata("dialog_bounds", "export", Rect2(get_position(), get_size()));
 			}
 		} break;
+
 		case NOTIFICATION_READY: {
 			duplicate_preset->set_icon(presets->get_theme_icon(SNAME("Duplicate"), SNAME("EditorIcons")));
 			delete_preset->set_icon(presets->get_theme_icon(SNAME("Remove"), SNAME("EditorIcons")));
 			connect("confirmed", callable_mp(this, &ProjectExportDialog::_export_pck_zip));
 			_update_export_all();
+		} break;
+
+		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
+			parameters->set_property_name_style(EditorPropertyNameProcessor::get_settings_style());
 		} break;
 	}
 }
@@ -265,10 +270,25 @@ void ProjectExportDialog::_edit_preset(int p_index) {
 			export_templates_error->hide();
 		}
 
+		export_warning->hide();
 		export_button->set_disabled(true);
 		get_ok_button()->set_disabled(true);
-
 	} else {
+		if (error != String()) {
+			Vector<String> items = error.split("\n", false);
+			error = "";
+			for (int i = 0; i < items.size(); i++) {
+				if (i > 0) {
+					error += "\n";
+				}
+				error += " - " + items[i];
+			}
+			export_warning->set_text(error);
+			export_warning->show();
+		} else {
+			export_warning->hide();
+		}
+
 		export_error->hide();
 		export_templates_error->hide();
 		export_button->set_disabled(false);
@@ -737,12 +757,10 @@ bool ProjectExportDialog::_fill_tree(EditorFileSystemDirectory *p_dir, TreeItem 
 	p_item->set_metadata(0, p_dir->get_path());
 
 	bool used = false;
-	bool checked = true;
 	for (int i = 0; i < p_dir->get_subdir_count(); i++) {
 		TreeItem *subdir = include_files->create_item(p_item);
 		if (_fill_tree(p_dir->get_subdir(i), subdir, current, p_only_scenes)) {
 			used = true;
-			checked = checked && subdir->is_checked(0);
 		} else {
 			memdelete(subdir);
 		}
@@ -767,12 +785,10 @@ bool ProjectExportDialog::_fill_tree(EditorFileSystemDirectory *p_dir, TreeItem 
 		file->set_editable(0, true);
 		file->set_checked(0, current->has_export_file(path));
 		file->set_metadata(0, path);
-		checked = checked && file->is_checked(0);
+		file->propagate_check(0);
 
 		used = true;
 	}
-
-	p_item->set_checked(0, checked);
 	return used;
 }
 
@@ -791,54 +807,24 @@ void ProjectExportDialog::_tree_changed() {
 		return;
 	}
 
-	String path = item->get_metadata(0);
-	bool added = item->is_checked(0);
+	item->propagate_check(0);
+}
 
-	if (path.ends_with("/")) {
-		_check_dir_recursive(item, added);
-	} else {
+void ProjectExportDialog::_check_propagated_to_item(Object *p_obj, int column) {
+	Ref<EditorExportPreset> current = get_current_preset();
+	if (current.is_null()) {
+		return;
+	}
+	TreeItem *item = Object::cast_to<TreeItem>(p_obj);
+	String path = item->get_metadata(0);
+	if (item && !path.ends_with("/")) {
+		bool added = item->is_checked(0);
 		if (added) {
 			current->add_export_file(path);
 		} else {
 			current->remove_export_file(path);
 		}
 	}
-	_refresh_parent_checks(item); // Makes parent folder checked if all files/folders are checked.
-}
-
-void ProjectExportDialog::_check_dir_recursive(TreeItem *p_dir, bool p_checked) {
-	for (TreeItem *child = p_dir->get_first_child(); child; child = child->get_next()) {
-		String path = child->get_metadata(0);
-
-		child->set_checked(0, p_checked);
-		if (path.ends_with("/")) {
-			_check_dir_recursive(child, p_checked);
-		} else {
-			if (p_checked) {
-				get_current_preset()->add_export_file(path);
-			} else {
-				get_current_preset()->remove_export_file(path);
-			}
-		}
-	}
-}
-
-void ProjectExportDialog::_refresh_parent_checks(TreeItem *p_item) {
-	TreeItem *parent = p_item->get_parent();
-	if (!parent) {
-		return;
-	}
-
-	bool checked = true;
-	for (TreeItem *child = parent->get_first_child(); child; child = child->get_next()) {
-		checked = checked && child->is_checked(0);
-		if (!checked) {
-			break;
-		}
-	}
-	parent->set_checked(0, checked);
-
-	_refresh_parent_checks(parent);
 }
 
 void ProjectExportDialog::_export_pck_zip() {
@@ -901,7 +887,8 @@ void ProjectExportDialog::_export_project() {
 
 	List<String> extension_list = platform->get_binary_extensions(current);
 	for (int i = 0; i < extension_list.size(); i++) {
-		export_project->add_filter("*." + extension_list[i] + " ; " + platform->get_name() + " Export");
+		// TRANSLATORS: This is the name of a project export file format. %s will be replaced by the platform name.
+		export_project->add_filter(vformat("*.%s; %s", extension_list[i], vformat(TTR("%s Export"), platform->get_name())));
 	}
 
 	if (!current->get_export_path().is_empty()) {
@@ -1073,7 +1060,6 @@ ProjectExportDialog::ProjectExportDialog() {
 	// Subsections.
 
 	sections = memnew(TabContainer);
-	sections->set_tab_alignment(TabContainer::ALIGNMENT_LEFT);
 	sections->set_use_hidden_tabs_for_min_size(true);
 	settings_vb->add_child(sections);
 	sections->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -1084,6 +1070,7 @@ ProjectExportDialog::ProjectExportDialog() {
 	sections->add_child(parameters);
 	parameters->set_name(TTR("Options"));
 	parameters->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	parameters->set_property_name_style(EditorPropertyNameProcessor::get_settings_style());
 	parameters->connect("property_edited", callable_mp(this, &ProjectExportDialog::_update_parameters));
 	EditorExport::get_singleton()->connect("export_presets_updated", callable_mp(this, &ProjectExportDialog::_force_update_current_preset_parameters));
 
@@ -1111,6 +1098,7 @@ ProjectExportDialog::ProjectExportDialog() {
 	include_files = memnew(Tree);
 	include_margin->add_child(include_files);
 	include_files->connect("item_edited", callable_mp(this, &ProjectExportDialog::_tree_changed));
+	include_files->connect("check_propagated_to_item", callable_mp(this, &ProjectExportDialog::_check_propagated_to_item));
 
 	include_filters = memnew(LineEdit);
 	resources_vb->add_margin_child(
@@ -1144,9 +1132,6 @@ ProjectExportDialog::ProjectExportDialog() {
 
 	// Script export parameters.
 
-	updating_script_key = false;
-	updating_enc_filters = false;
-
 	VBoxContainer *sec_vb = memnew(VBoxContainer);
 	sec_vb->set_name(TTR("Encryption"));
 
@@ -1169,7 +1154,7 @@ ProjectExportDialog::ProjectExportDialog() {
 	enc_ex_filters = memnew(LineEdit);
 	enc_ex_filters->connect("text_changed", callable_mp(this, &ProjectExportDialog::_enc_filters_changed));
 	sec_vb->add_margin_child(
-			TTR("Filters to exclude files/folders\n(comma-separated, e.g: *.stex, *.import, music/*)"),
+			TTR("Filters to exclude files/folders\n(comma-separated, e.g: *.ctex, *.import, music/*)"),
 			enc_ex_filters);
 
 	script_key = memnew(LineEdit);
@@ -1211,8 +1196,6 @@ ProjectExportDialog::ProjectExportDialog() {
 
 	// Export buttons, dialogs and errors.
 
-	updating = false;
-
 	get_cancel_button()->set_text(TTR("Close"));
 	get_ok_button()->set_text(TTR("Export PCK/ZIP..."));
 	export_button = add_button(TTR("Export Project..."), !DisplayServer::get_singleton()->get_swap_cancel_ok(), "export");
@@ -1246,6 +1229,11 @@ ProjectExportDialog::ProjectExportDialog() {
 	main_vb->add_child(export_error);
 	export_error->hide();
 	export_error->add_theme_color_override("font_color", EditorNode::get_singleton()->get_gui_base()->get_theme_color(SNAME("error_color"), SNAME("Editor")));
+
+	export_warning = memnew(Label);
+	main_vb->add_child(export_warning);
+	export_warning->hide();
+	export_warning->add_theme_color_override("font_color", EditorNode::get_singleton()->get_gui_base()->get_theme_color(SNAME("warning_color"), SNAME("Editor")));
 
 	export_templates_error = memnew(HBoxContainer);
 	main_vb->add_child(export_templates_error);
@@ -1287,8 +1275,6 @@ ProjectExportDialog::ProjectExportDialog() {
 	export_pck_zip->get_vbox()->add_child(export_pck_zip_debug);
 
 	set_hide_on_ok(false);
-
-	editor_icons = "EditorIcons";
 
 	default_filename = EditorSettings::get_singleton()->get_project_metadata("export_options", "default_filename", "");
 	// If no default set, use project name

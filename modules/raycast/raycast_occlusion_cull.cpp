@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -85,7 +85,7 @@ void RaycastOcclusionCull::RaycastHZBuffer::update_camera_rays(const Transform3D
 	td.z_near = p_cam_projection.get_z_near();
 	td.z_far = p_cam_projection.get_z_far() * 1.05f;
 	td.camera_pos = p_cam_transform.origin;
-	td.camera_dir = -p_cam_transform.basis.get_axis(2);
+	td.camera_dir = -p_cam_transform.basis.get_column(2);
 	td.camera_orthogonal = p_cam_orthogonal;
 
 	CameraMatrix inv_camera_matrix = p_cam_projection.inverse();
@@ -270,12 +270,13 @@ void RaycastOcclusionCull::scenario_set_instance(RID p_scenario, RID p_instance,
 
 	OccluderInstance &instance = scenario.instances[p_instance];
 
+	bool changed = false;
+
 	if (instance.removed) {
 		instance.removed = false;
 		scenario.removed_instances.erase(p_instance);
+		changed = true; // It was removed and re-added, we might have missed some changes
 	}
-
-	bool changed = false;
 
 	if (instance.occluder != p_occluder) {
 		Occluder *old_occluder = occluder_owner.get_or_null(instance.occluder);
@@ -547,7 +548,7 @@ void RaycastOcclusionCull::buffer_update(RID p_buffer, const Transform3D &p_cam_
 	buffer.update_camera_rays(p_cam_transform, p_cam_projection, p_cam_orthogonal, p_thread_pool);
 
 	scenario.raycast(buffer.camera_rays, buffer.camera_ray_masks.ptr(), buffer.camera_rays_tile_count, p_thread_pool);
-	buffer.sort_rays(-p_cam_transform.basis.get_axis(2), p_cam_orthogonal);
+	buffer.sort_rays(-p_cam_transform.basis.get_column(2), p_cam_orthogonal);
 	buffer.update_mips();
 }
 

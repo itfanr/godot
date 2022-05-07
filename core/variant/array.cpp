@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -370,20 +370,24 @@ Array Array::slice(int p_begin, int p_end, int p_step, bool p_deep) const {
 
 	ERR_FAIL_COND_V_MSG(p_step == 0, result, "Slice step cannot be zero.");
 
-	if (p_end < 0) {
-		p_end += size() + 1;
+	const int s = size();
+
+	int begin = CLAMP(p_begin, -s, s);
+	if (begin < 0) {
+		begin += s;
+	}
+	int end = CLAMP(p_end, -s, s);
+	if (end < 0) {
+		end += s;
 	}
 
-	ERR_FAIL_INDEX_V(p_begin, size(), result);
-	ERR_FAIL_INDEX_V(p_end, size() + 1, result);
+	ERR_FAIL_COND_V_MSG(p_step > 0 && begin > end, result, "Slice is positive, but bounds is decreasing.");
+	ERR_FAIL_COND_V_MSG(p_step < 0 && begin < end, result, "Slice is negative, but bounds is increasing.");
 
-	ERR_FAIL_COND_V_MSG(p_step > 0 && p_begin > p_end, result, "Slice is positive, but bounds is decreasing");
-	ERR_FAIL_COND_V_MSG(p_step < 0 && p_begin < p_end, result, "Slice is negative, but bounds is increasing");
-
-	int result_size = (p_end - p_begin) / p_step;
+	int result_size = (end - begin) / p_step;
 	result.resize(result_size);
 
-	for (int src_idx = p_begin, dest_idx = 0; dest_idx < result_size; ++dest_idx) {
+	for (int src_idx = begin, dest_idx = 0; dest_idx < result_size; ++dest_idx) {
 		result[dest_idx] = p_deep ? get(src_idx).duplicate(true) : get(src_idx);
 		src_idx += p_step;
 	}
@@ -480,24 +484,8 @@ void Array::sort() {
 	_p->array.sort_custom<_ArrayVariantSort>();
 }
 
-struct _ArrayVariantSortCustom {
-	Callable func;
-
-	_FORCE_INLINE_ bool operator()(const Variant &p_l, const Variant &p_r) const {
-		const Variant *args[2] = { &p_l, &p_r };
-		Callable::CallError err;
-		Variant res;
-		func.call(args, 2, res, err);
-		ERR_FAIL_COND_V_MSG(err.error != Callable::CallError::CALL_OK, false,
-				"Error calling sorting method: " + Variant::get_callable_error_text(func, args, 1, err));
-		return res;
-	}
-};
-
-void Array::sort_custom(Callable p_callable) {
-	SortArray<Variant, _ArrayVariantSortCustom, true> avs;
-	avs.compare.func = p_callable;
-	avs.sort(_p->array.ptrw(), _p->array.size());
+void Array::sort_custom(const Callable &p_callable) {
+	_p->array.sort_custom<CallableComparator, true>(p_callable);
 }
 
 void Array::shuffle() {
@@ -520,13 +508,10 @@ int Array::bsearch(const Variant &p_value, bool p_before) {
 	return avs.bisect(_p->array.ptrw(), _p->array.size(), p_value, p_before);
 }
 
-int Array::bsearch_custom(const Variant &p_value, Callable p_callable, bool p_before) {
+int Array::bsearch_custom(const Variant &p_value, const Callable &p_callable, bool p_before) {
 	ERR_FAIL_COND_V(!_p->typed.validate(p_value, "custom binary search"), -1);
 
-	SearchArray<Variant, _ArrayVariantSortCustom> avs;
-	avs.compare.func = p_callable;
-
-	return avs.bisect(_p->array.ptrw(), _p->array.size(), p_value, p_before);
+	return _p->array.bsearch_custom<CallableComparator>(p_value, p_before, p_callable);
 }
 
 void Array::reverse() {
@@ -627,7 +612,7 @@ Variant Array::max() const {
 }
 
 const void *Array::id() const {
-	return _p->array.ptr();
+	return _p;
 }
 
 Array::Array(const Array &p_from, uint32_t p_type, const StringName &p_class_name, const Variant &p_script) {

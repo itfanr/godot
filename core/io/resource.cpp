@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -208,13 +208,13 @@ Ref<Resource> Resource::duplicate_for_local_scene(Node *p_for_scene, Map<Ref<Res
 		}
 		Variant p = get(E.name);
 		if (p.get_type() == Variant::OBJECT) {
-			RES sr = p;
+			Ref<Resource> sr = p;
 			if (sr.is_valid()) {
 				if (sr->is_local_to_scene()) {
 					if (remap_cache.has(sr)) {
 						p = remap_cache[sr];
 					} else {
-						RES dupe = sr->duplicate_for_local_scene(p_for_scene, remap_cache);
+						Ref<Resource> dupe = sr->duplicate_for_local_scene(p_for_scene, remap_cache);
 						p = dupe;
 						remap_cache[sr] = dupe;
 					}
@@ -240,7 +240,7 @@ void Resource::configure_for_local_scene(Node *p_for_scene, Map<Ref<Resource>, R
 		}
 		Variant p = get(E.name);
 		if (p.get_type() == Variant::OBJECT) {
-			RES sr = p;
+			Ref<Resource> sr = p;
 			if (sr.is_valid()) {
 				if (sr->is_local_to_scene()) {
 					if (!remap_cache.has(sr)) {
@@ -257,7 +257,7 @@ Ref<Resource> Resource::duplicate(bool p_subresources) const {
 	List<PropertyInfo> plist;
 	get_property_list(&plist);
 
-	Ref<Resource> r = (Resource *)ClassDB::instantiate(get_class());
+	Ref<Resource> r = static_cast<Resource *>(ClassDB::instantiate(get_class()));
 	ERR_FAIL_COND_V(r.is_null(), Ref<Resource>());
 
 	for (const PropertyInfo &E : plist) {
@@ -269,7 +269,7 @@ Ref<Resource> Resource::duplicate(bool p_subresources) const {
 		if ((p.get_type() == Variant::DICTIONARY || p.get_type() == Variant::ARRAY)) {
 			r->set(E.name, p.duplicate(p_subresources));
 		} else if (p.get_type() == Variant::OBJECT && (p_subresources || (E.usage & PROPERTY_USAGE_DO_NOT_SHARE_ON_DUPLICATE))) {
-			RES sr = p;
+			Ref<Resource> sr = p;
 			if (sr.is_valid()) {
 				r->set(E.name, sr->duplicate(p_subresources));
 			}
@@ -290,6 +290,21 @@ void Resource::_take_over_path(const String &p_path) {
 }
 
 RID Resource::get_rid() const {
+	if (get_script_instance()) {
+		Callable::CallError ce;
+		RID ret = get_script_instance()->callp(SNAME("_get_rid"), nullptr, 0, ce);
+		if (ce.error == Callable::CallError::CALL_OK && ret.is_valid()) {
+			return ret;
+		}
+	}
+	if (_get_extension() && _get_extension()->get_rid) {
+		RID ret;
+		ret.from_uint64(_get_extension()->get_rid(_get_extension_instance()));
+		if (ret.is_valid()) {
+			return ret;
+		}
+	}
+
 	return RID();
 }
 
@@ -306,7 +321,7 @@ void Resource::notify_change_to_owners() {
 		Object *obj = ObjectDB::get_instance(E->get());
 		ERR_CONTINUE_MSG(!obj, "Object was deleted, while still owning a resource."); //wtf
 		//TODO store string
-		obj->call("resource_changed", RES(this));
+		obj->call("resource_changed", Ref<Resource>(this));
 	}
 }
 
@@ -320,7 +335,7 @@ uint32_t Resource::hash_edited_version() const {
 
 	for (const PropertyInfo &E : plist) {
 		if (E.usage & PROPERTY_USAGE_STORAGE && E.type == Variant::OBJECT && E.hint == PROPERTY_HINT_RESOURCE_TYPE) {
-			RES res = get(E.name);
+			Ref<Resource> res = get(E.name);
 			if (res.is_valid()) {
 				hash = hash_djb2_one_32(res->hash_edited_version(), hash);
 			}
@@ -428,6 +443,11 @@ void Resource::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "resource_local_to_scene"), "set_local_to_scene", "is_local_to_scene");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "resource_path", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_path", "get_path");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "resource_name"), "set_name", "get_name");
+
+	MethodInfo get_rid_bind("_get_rid");
+	get_rid_bind.return_val.type = Variant::RID;
+
+	::ClassDB::add_virtual_method(get_class_static(), get_rid_bind, true, Vector<String>(), true);
 }
 
 Resource::Resource() :
@@ -518,10 +538,10 @@ void ResourceCache::dump(const char *p_file, bool p_short) {
 
 	Map<String, int> type_count;
 
-	FileAccess *f = nullptr;
+	Ref<FileAccess> f;
 	if (p_file) {
-		f = FileAccess::open(p_file, FileAccess::WRITE);
-		ERR_FAIL_COND_MSG(!f, "Cannot create file at path '" + String(p_file) + "'.");
+		f = FileAccess::open(String::utf8(p_file), FileAccess::WRITE);
+		ERR_FAIL_COND_MSG(f.is_null(), "Cannot create file at path '" + String::utf8(p_file) + "'.");
 	}
 
 	const String *K = nullptr;
@@ -535,20 +555,16 @@ void ResourceCache::dump(const char *p_file, bool p_short) {
 		type_count[r->get_class()]++;
 
 		if (!p_short) {
-			if (f) {
+			if (f.is_valid()) {
 				f->store_line(r->get_class() + ": " + r->get_path());
 			}
 		}
 	}
 
 	for (const KeyValue<String, int> &E : type_count) {
-		if (f) {
+		if (f.is_valid()) {
 			f->store_line(E.key + " count: " + itos(E.value));
 		}
-	}
-	if (f) {
-		f->close();
-		memdelete(f);
 	}
 
 	lock.read_unlock();

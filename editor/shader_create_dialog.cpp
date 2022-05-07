@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -29,6 +29,9 @@
 /*************************************************************************/
 
 #include "shader_create_dialog.h"
+
+#include "core/config/project_settings.h"
+#include "editor/editor_file_dialog.h"
 #include "editor/editor_scale.h"
 #include "scene/resources/visual_shader.h"
 #include "servers/rendering/shader_types.h"
@@ -54,6 +57,7 @@ void ShaderCreateDialog::_notification(int p_what) {
 			current_mode = EditorSettings::get_singleton()->get_project_metadata("shader_setup", "last_selected_mode", 0);
 			mode_menu->select(current_mode);
 		} break;
+
 		case NOTIFICATION_THEME_CHANGED: {
 			_update_theme();
 		} break;
@@ -131,7 +135,7 @@ void ShaderCreateDialog::ok_pressed() {
 }
 
 void ShaderCreateDialog::_create_new() {
-	RES shader;
+	Ref<Resource> shader;
 
 	if (language_menu->get_selected() == int(SHADER_TYPE_TEXT)) {
 		Ref<Shader> text_shader;
@@ -201,7 +205,7 @@ void ShaderCreateDialog::_create_new() {
 
 void ShaderCreateDialog::_load_exist() {
 	String path = file_path->get_text();
-	RES p_shader = ResourceLoader::load(path, "Shader");
+	Ref<Resource> p_shader = ResourceLoader::load(path, "Shader");
 	if (p_shader.is_null()) {
 		alert->set_text(vformat(TTR("Error loading shader from %s"), path));
 		alert->popup_centered();
@@ -221,7 +225,7 @@ void ShaderCreateDialog::_language_changed(int p_language) {
 	String extension = "";
 
 	if (!path.is_empty()) {
-		if (path.find(".") != -1) {
+		if (path.contains(".")) {
 			extension = path.get_extension();
 		}
 		if (extension.length() == 0) {
@@ -309,7 +313,7 @@ void ShaderCreateDialog::_path_changed(const String &p_path) {
 		return;
 	}
 
-	DirAccessRef f = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	Ref<DirAccess> f = DirAccess::create(DirAccess::ACCESS_RESOURCES);
 	String p = ProjectSettings::get_singleton()->localize_path(p_path.strip_edges());
 	if (f->file_exists(p)) {
 		is_new_shader_created = false;
@@ -367,12 +371,12 @@ String ShaderCreateDialog::_validate_path(const String &p_path) {
 		return TTR("Path is not local.");
 	}
 
-	DirAccessRef d = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	Ref<DirAccess> d = DirAccess::create(DirAccess::ACCESS_RESOURCES);
 	if (d->change_dir(p.get_base_dir()) != OK) {
 		return TTR("Invalid base path.");
 	}
 
-	DirAccessRef f = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	Ref<DirAccess> f = DirAccess::create(DirAccess::ACCESS_RESOURCES);
 	if (f->dir_exists(p)) {
 		return TTR("A directory with the same name exists.");
 	}

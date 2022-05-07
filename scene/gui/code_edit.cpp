@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -33,14 +33,6 @@
 #include "core/os/keyboard.h"
 #include "core/string/string_builder.h"
 #include "core/string/ustring.h"
-
-static bool _is_whitespace(char32_t c) {
-	return c == '\t' || c == ' ';
-}
-
-static bool _is_char(char32_t c) {
-	return !is_symbol(c);
-}
 
 void CodeEdit::_notification(int p_what) {
 	switch (p_what) {
@@ -82,6 +74,7 @@ void CodeEdit::_notification(int p_what) {
 
 			line_length_guideline_color = get_theme_color(SNAME("line_length_guideline_color"));
 		} break;
+
 		case NOTIFICATION_DRAW: {
 			RID ci = get_canvas_item();
 			const Size2 size = get_size();
@@ -92,7 +85,7 @@ void CodeEdit::_notification(int p_what) {
 			if (line_length_guideline_columns.size() > 0) {
 				const int xmargin_beg = style_normal->get_margin(SIDE_LEFT) + get_total_gutter_width();
 				const int xmargin_end = size.width - style_normal->get_margin(SIDE_RIGHT) - (is_drawing_minimap() ? get_minimap_width() : 0);
-				const int char_size = (int)font->get_char_size('0', 0, font_size).width;
+				const float char_size = font->get_char_size('0', 0, font_size).width;
 
 				for (int i = 0; i < line_length_guideline_columns.size(); i++) {
 					const int xoffset = xmargin_beg + char_size * (int)line_length_guideline_columns[i] - get_h_scroll();
@@ -113,7 +106,7 @@ void CodeEdit::_notification(int p_what) {
 
 				const int code_completion_options_count = code_completion_options.size();
 				const int lines = MIN(code_completion_options_count, code_completion_max_lines);
-				const int icon_hsep = get_theme_constant(SNAME("hseparation"), SNAME("ItemList"));
+				const int icon_hsep = get_theme_constant(SNAME("h_separation"), SNAME("ItemList"));
 				const Size2 icon_area_size(row_height, row_height);
 
 				code_completion_rect.size.width = code_completion_longest_line + icon_hsep + icon_area_size.width + 2;
@@ -143,7 +136,6 @@ void CodeEdit::_notification(int p_what) {
 
 				code_completion_line_ofs = CLAMP(code_completion_current_selected - lines / 2, 0, code_completion_options_count - lines);
 				RenderingServer::get_singleton()->canvas_item_add_rect(ci, Rect2(Point2(code_completion_rect.position.x, code_completion_rect.position.y + (code_completion_current_selected - code_completion_line_ofs) * row_height), Size2(code_completion_rect.size.width, row_height)), code_completion_selected_color);
-				draw_rect(Rect2(code_completion_rect.position + Vector2(icon_area_size.x + icon_hsep, 0), Size2(MIN(code_completion_base_width, code_completion_rect.size.width - (icon_area_size.x + icon_hsep)), code_completion_rect.size.height)), code_completion_existing_color);
 
 				for (int i = 0; i < lines; i++) {
 					int l = code_completion_line_ofs + i;
@@ -177,6 +169,17 @@ void CodeEdit::_notification(int p_what) {
 						}
 						tl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT);
 					}
+
+					Point2 match_pos = Point2(code_completion_rect.position.x + icon_area_size.x + icon_hsep, code_completion_rect.position.y + i * row_height);
+
+					for (int j = 0; j < code_completion_options[l].matches.size(); j++) {
+						Pair<int, int> match = code_completion_options[l].matches[j];
+						int match_offset = font->get_string_size(code_completion_options[l].display.substr(0, match.first), font_size).width;
+						int match_len = font->get_string_size(code_completion_options[l].display.substr(match.first, match.second), font_size).width;
+
+						draw_rect(Rect2(match_pos + Point2(match_offset, 0), Size2(match_len, row_height)), code_completion_existing_color);
+					}
+
 					tl->draw(ci, title_pos, code_completion_options[l].font_color);
 				}
 
@@ -222,7 +225,7 @@ void CodeEdit::_notification(int p_what) {
 
 					int begin = 0;
 					int end = 0;
-					if (line.find(String::chr(0xFFFF)) != -1) {
+					if (line.contains(String::chr(0xFFFF))) {
 						begin = font->get_string_size(line.substr(0, line.find(String::chr(0xFFFF))), font_size).x;
 						end = font->get_string_size(line.substr(0, line.rfind(String::chr(0xFFFF))), font_size).x;
 					}
@@ -561,6 +564,8 @@ Control::CursorShape CodeEdit::get_cursor_shape(const Point2 &p_pos) const {
 // Overridable actions
 void CodeEdit::_handle_unicode_input_internal(const uint32_t p_unicode) {
 	bool had_selection = has_selection();
+	String selection_text = (had_selection ? get_selected_text() : "");
+
 	if (had_selection) {
 		begin_complex_operation();
 		delete_selection();
@@ -581,27 +586,38 @@ void CodeEdit::_handle_unicode_input_internal(const uint32_t p_unicode) {
 	if (auto_brace_completion_enabled) {
 		int cl = get_caret_line();
 		int cc = get_caret_column();
-		int caret_move_offset = 1;
 
-		int post_brace_pair = cc < get_line(cl).length() ? _get_auto_brace_pair_close_at_pos(cl, cc) : -1;
-
-		if (has_string_delimiter(chr) && cc > 0 && _is_char(get_line(cl)[cc - 1]) && post_brace_pair == -1) {
-			insert_text_at_caret(chr);
-		} else if (cc < get_line(cl).length() && _is_char(get_line(cl)[cc])) {
-			insert_text_at_caret(chr);
-		} else if (post_brace_pair != -1 && auto_brace_completion_pairs[post_brace_pair].close_key[0] == chr[0]) {
-			caret_move_offset = auto_brace_completion_pairs[post_brace_pair].close_key.length();
-		} else if (is_in_comment(cl, cc) != -1 || (is_in_string(cl, cc) != -1 && has_string_delimiter(chr))) {
-			insert_text_at_caret(chr);
-		} else {
+		if (had_selection) {
 			insert_text_at_caret(chr);
 
-			int pre_brace_pair = _get_auto_brace_pair_open_at_pos(cl, cc + 1);
-			if (pre_brace_pair != -1) {
-				insert_text_at_caret(auto_brace_completion_pairs[pre_brace_pair].close_key);
+			String close_key = get_auto_brace_completion_close_key(chr);
+			if (!close_key.is_empty()) {
+				insert_text_at_caret(selection_text + close_key);
+				set_caret_column(get_caret_column() - 1);
 			}
+		} else {
+			int caret_move_offset = 1;
+
+			int post_brace_pair = cc < get_line(cl).length() ? _get_auto_brace_pair_close_at_pos(cl, cc) : -1;
+
+			if (has_string_delimiter(chr) && cc > 0 && !is_symbol(get_line(cl)[cc - 1]) && post_brace_pair == -1) {
+				insert_text_at_caret(chr);
+			} else if (cc < get_line(cl).length() && !is_symbol(get_line(cl)[cc])) {
+				insert_text_at_caret(chr);
+			} else if (post_brace_pair != -1 && auto_brace_completion_pairs[post_brace_pair].close_key[0] == chr[0]) {
+				caret_move_offset = auto_brace_completion_pairs[post_brace_pair].close_key.length();
+			} else if (is_in_comment(cl, cc) != -1 || (is_in_string(cl, cc) != -1 && has_string_delimiter(chr))) {
+				insert_text_at_caret(chr);
+			} else {
+				insert_text_at_caret(chr);
+
+				int pre_brace_pair = _get_auto_brace_pair_open_at_pos(cl, cc + 1);
+				if (pre_brace_pair != -1) {
+					insert_text_at_caret(auto_brace_completion_pairs[pre_brace_pair].close_key);
+				}
+			}
+			set_caret_column(cc + caret_move_offset);
 		}
-		set_caret_column(cc + caret_move_offset);
 	} else {
 		insert_text_at_caret(chr);
 	}
@@ -927,8 +943,10 @@ void CodeEdit::_new_line(bool p_split_current_line, bool p_above) {
 		return;
 	}
 
-	const int cc = get_caret_column();
+	/* When not splitting the line, we need to factor in indentation from the end of the current line. */
+	const int cc = p_split_current_line ? get_caret_column() : get_line(get_caret_line()).length();
 	const int cl = get_caret_line();
+
 	const String line = get_line(cl);
 
 	String ins = "\n";
@@ -976,7 +994,8 @@ void CodeEdit::_new_line(bool p_split_current_line, bool p_above) {
 			}
 
 			/* Make sure this is the last char, trailing whitespace or comments are okay. */
-			if (should_indent && (!_is_whitespace(c) && is_in_comment(cl, cc) == -1)) {
+			/* Increment column for comments because the delimiter (#) should be ignored. */
+			if (should_indent && (!is_whitespace(c) && is_in_comment(cl, line_col + 1) == -1)) {
 				should_indent = false;
 			}
 		}
@@ -1002,6 +1021,8 @@ void CodeEdit::_new_line(bool p_split_current_line, bool p_above) {
 
 	bool first_line = false;
 	if (!p_split_current_line) {
+		deselect();
+
 		if (p_above) {
 			if (cl > 0) {
 				set_caret_line(cl - 1, false);
@@ -1762,10 +1783,10 @@ void CodeEdit::request_code_completion(bool p_force) {
 	/* Don't re-query if all existing options are quoted types, eg path, signal. */
 	bool ignored = code_completion_active && !code_completion_options.is_empty();
 	if (ignored) {
-		ScriptCodeCompletionOption::Kind kind = ScriptCodeCompletionOption::KIND_PLAIN_TEXT;
-		const ScriptCodeCompletionOption *previous_option = nullptr;
+		ScriptLanguage::CodeCompletionKind kind = ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT;
+		const ScriptLanguage::CodeCompletionOption *previous_option = nullptr;
 		for (int i = 0; i < code_completion_options.size(); i++) {
-			const ScriptCodeCompletionOption &current_option = code_completion_options[i];
+			const ScriptLanguage::CodeCompletionOption &current_option = code_completion_options[i];
 			if (!previous_option) {
 				previous_option = &current_option;
 				kind = current_option.kind;
@@ -1775,7 +1796,7 @@ void CodeEdit::request_code_completion(bool p_force) {
 				break;
 			}
 		}
-		ignored = ignored && (kind == ScriptCodeCompletionOption::KIND_FILE_PATH || kind == ScriptCodeCompletionOption::KIND_NODE_PATH || kind == ScriptCodeCompletionOption::KIND_SIGNAL);
+		ignored = ignored && (kind == ScriptLanguage::CODE_COMPLETION_KIND_FILE_PATH || kind == ScriptLanguage::CODE_COMPLETION_KIND_NODE_PATH || kind == ScriptLanguage::CODE_COMPLETION_KIND_SIGNAL);
 	}
 
 	if (ignored) {
@@ -1783,23 +1804,23 @@ void CodeEdit::request_code_completion(bool p_force) {
 	}
 
 	if (p_force) {
-		emit_signal(SNAME("request_code_completion"));
+		emit_signal(SNAME("code_completion_requested"));
 		return;
 	}
 
 	String line = get_line(get_caret_line());
 	int ofs = CLAMP(get_caret_column(), 0, line.length());
 
-	if (ofs > 0 && (is_in_string(get_caret_line(), ofs) != -1 || _is_char(line[ofs - 1]) || code_completion_prefixes.has(line[ofs - 1]))) {
-		emit_signal(SNAME("request_code_completion"));
+	if (ofs > 0 && (is_in_string(get_caret_line(), ofs) != -1 || !is_symbol(line[ofs - 1]) || code_completion_prefixes.has(line[ofs - 1]))) {
+		emit_signal(SNAME("code_completion_requested"));
 	} else if (ofs > 1 && line[ofs - 1] == ' ' && code_completion_prefixes.has(line[ofs - 2])) {
-		emit_signal(SNAME("request_code_completion"));
+		emit_signal(SNAME("code_completion_requested"));
 	}
 }
 
-void CodeEdit::add_code_completion_option(CodeCompletionKind p_type, const String &p_display_text, const String &p_insert_text, const Color &p_text_color, const RES &p_icon, const Variant &p_value) {
-	ScriptCodeCompletionOption completion_option;
-	completion_option.kind = (ScriptCodeCompletionOption::Kind)p_type;
+void CodeEdit::add_code_completion_option(CodeCompletionKind p_type, const String &p_display_text, const String &p_insert_text, const Color &p_text_color, const Ref<Resource> &p_icon, const Variant &p_value) {
+	ScriptLanguage::CodeCompletionOption completion_option;
+	completion_option.kind = (ScriptLanguage::CodeCompletionKind)p_type;
 	completion_option.display = p_display_text;
 	completion_option.insert_text = p_insert_text;
 	completion_option.font_color = p_text_color;
@@ -1899,7 +1920,7 @@ void CodeEdit::confirm_code_completion(bool p_replace) {
 
 		if (merge_text) {
 			for (; caret_col < line.length(); caret_col++) {
-				if (!_is_char(line[caret_col])) {
+				if (is_symbol(line[caret_col])) {
 					break;
 				}
 			}
@@ -2075,8 +2096,6 @@ void CodeEdit::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_auto_brace_completion_close_key", "open_key"), &CodeEdit::get_auto_brace_completion_close_key);
 
 	/* Main Gutter */
-	ClassDB::bind_method(D_METHOD("_main_gutter_draw_callback"), &CodeEdit::_main_gutter_draw_callback);
-
 	ClassDB::bind_method(D_METHOD("set_draw_breakpoints_gutter", "enable"), &CodeEdit::set_draw_breakpoints_gutter);
 	ClassDB::bind_method(D_METHOD("is_drawing_breakpoints_gutter"), &CodeEdit::is_drawing_breakpoints_gutter);
 
@@ -2105,16 +2124,12 @@ void CodeEdit::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_executing_lines"), &CodeEdit::get_executing_lines);
 
 	/* Line numbers */
-	ClassDB::bind_method(D_METHOD("_line_number_draw_callback"), &CodeEdit::_line_number_draw_callback);
-
 	ClassDB::bind_method(D_METHOD("set_draw_line_numbers", "enable"), &CodeEdit::set_draw_line_numbers);
 	ClassDB::bind_method(D_METHOD("is_draw_line_numbers_enabled"), &CodeEdit::is_draw_line_numbers_enabled);
 	ClassDB::bind_method(D_METHOD("set_line_numbers_zero_padded", "enable"), &CodeEdit::set_line_numbers_zero_padded);
 	ClassDB::bind_method(D_METHOD("is_line_numbers_zero_padded"), &CodeEdit::is_line_numbers_zero_padded);
 
 	/* Fold Gutter */
-	ClassDB::bind_method(D_METHOD("_fold_gutter_draw_callback"), &CodeEdit::_fold_gutter_draw_callback);
-
 	ClassDB::bind_method(D_METHOD("set_draw_fold_gutter", "enable"), &CodeEdit::set_draw_fold_gutter);
 	ClassDB::bind_method(D_METHOD("is_drawing_fold_gutter"), &CodeEdit::is_drawing_fold_gutter);
 
@@ -2181,7 +2196,7 @@ void CodeEdit::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_text_for_code_completion"), &CodeEdit::get_text_for_code_completion);
 	ClassDB::bind_method(D_METHOD("request_code_completion", "force"), &CodeEdit::request_code_completion, DEFVAL(false));
-	ClassDB::bind_method(D_METHOD("add_code_completion_option", "type", "display_text", "insert_text", "text_color", "icon", "value"), &CodeEdit::add_code_completion_option, DEFVAL(Color(1, 1, 1)), DEFVAL(RES()), DEFVAL(Variant::NIL));
+	ClassDB::bind_method(D_METHOD("add_code_completion_option", "type", "display_text", "insert_text", "text_color", "icon", "value"), &CodeEdit::add_code_completion_option, DEFVAL(Color(1, 1, 1)), DEFVAL(Ref<Resource>()), DEFVAL(Variant::NIL));
 	ClassDB::bind_method(D_METHOD("update_code_completion_options", "force"), &CodeEdit::update_code_completion_options);
 	ClassDB::bind_method(D_METHOD("get_code_completion_options"), &CodeEdit::get_code_completion_options);
 	ClassDB::bind_method(D_METHOD("get_code_completion_option", "index"), &CodeEdit::get_code_completion_option);
@@ -2247,7 +2262,7 @@ void CodeEdit::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "indent_automatic"), "set_auto_indent_enabled", "is_auto_indent_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "indent_automatic_prefixes"), "set_auto_indent_prefixes", "get_auto_indent_prefixes");
 
-	ADD_GROUP("Auto brace completion", "auto_brace_completion_");
+	ADD_GROUP("Auto Brace Completion", "auto_brace_completion_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "auto_brace_completion_enabled"), "set_auto_brace_completion_enabled", "is_auto_brace_completion_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "auto_brace_completion_highlight_matching"), "set_highlight_matching_braces_enabled", "is_highlight_matching_braces_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "auto_brace_completion_pairs"), "set_auto_brace_completion_pairs", "get_auto_brace_completion_pairs");
@@ -2257,7 +2272,7 @@ void CodeEdit::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("breakpoint_toggled", PropertyInfo(Variant::INT, "line")));
 
 	/* Code Completion */
-	ADD_SIGNAL(MethodInfo("request_code_completion"));
+	ADD_SIGNAL(MethodInfo("code_completion_requested"));
 
 	/* Symbol lookup */
 	ADD_SIGNAL(MethodInfo("symbol_lookup", PropertyInfo(Variant::STRING, "symbol"), PropertyInfo(Variant::INT, "line"), PropertyInfo(Variant::INT, "column")));
@@ -2541,7 +2556,7 @@ int CodeEdit::_is_in_delimiter(int p_line, int p_column, DelimiterType p_type) c
 			region = E->value();
 			in_region = true;
 			for (int i = E->key() - 2; i >= 0; i--) {
-				if (!_is_whitespace(line[i])) {
+				if (!is_whitespace(line[i])) {
 					return -1;
 				}
 			}
@@ -2560,7 +2575,7 @@ int CodeEdit::_is_in_delimiter(int p_line, int p_column, DelimiterType p_type) c
 		}
 
 		for (int i = end_col; i < line.length(); i++) {
-			if (!_is_whitespace(line[i])) {
+			if (!is_whitespace(line[i])) {
 				return -1;
 			}
 		}
@@ -2688,7 +2703,7 @@ void CodeEdit::_filter_code_completion_candidates_impl() {
 		TypedArray<Dictionary> completion_options_sources;
 		completion_options_sources.resize(code_completion_option_sources.size());
 		int i = 0;
-		for (const ScriptCodeCompletionOption &E : code_completion_option_sources) {
+		for (const ScriptLanguage::CodeCompletionOption &E : code_completion_option_sources) {
 			Dictionary option;
 			option["kind"] = E.kind;
 			option["display_text"] = E.display;
@@ -2713,8 +2728,8 @@ void CodeEdit::_filter_code_completion_candidates_impl() {
 		/* Convert back into options. */
 		int max_width = 0;
 		for (i = 0; i < completion_options.size(); i++) {
-			ScriptCodeCompletionOption option;
-			option.kind = (ScriptCodeCompletionOption::Kind)(int)completion_options[i].get("kind");
+			ScriptLanguage::CodeCompletionOption option;
+			option.kind = (ScriptLanguage::CodeCompletionKind)(int)completion_options[i].get("kind");
 			option.display = completion_options[i].get("display_text");
 			option.insert_text = completion_options[i].get("insert_text");
 			option.font_color = completion_options[i].get("font_color");
@@ -2776,11 +2791,11 @@ void CodeEdit::_filter_code_completion_candidates_impl() {
 		while (ofs > 0 && line[ofs] == ' ') {
 			ofs--;
 		}
-		prev_is_word = _is_char(line[ofs]);
+		prev_is_word = !is_symbol(line[ofs]);
 		/* Otherwise get current word and set cofs to the start. */
 	} else {
 		int start_cofs = cofs;
-		while (cofs > 0 && line[cofs - 1] > 32 && (line[cofs - 1] == '/' || _is_char(line[cofs - 1]))) {
+		while (cofs > 0 && line[cofs - 1] > 32 && (line[cofs - 1] == '/' || !is_symbol(line[cofs - 1]))) {
 			cofs--;
 		}
 		string_to_complete = line.substr(cofs, start_cofs - cofs);
@@ -2807,13 +2822,15 @@ void CodeEdit::_filter_code_completion_candidates_impl() {
 	code_completion_options.clear();
 	code_completion_base = string_to_complete;
 
-	Vector<ScriptCodeCompletionOption> completion_options_casei;
-	Vector<ScriptCodeCompletionOption> completion_options_subseq;
-	Vector<ScriptCodeCompletionOption> completion_options_subseq_casei;
+	Vector<ScriptLanguage::CodeCompletionOption> completion_options_casei;
+	Vector<ScriptLanguage::CodeCompletionOption> completion_options_substr;
+	Vector<ScriptLanguage::CodeCompletionOption> completion_options_substr_casei;
+	Vector<ScriptLanguage::CodeCompletionOption> completion_options_subseq;
+	Vector<ScriptLanguage::CodeCompletionOption> completion_options_subseq_casei;
 
 	int max_width = 0;
 	String string_to_complete_lower = string_to_complete.to_lower();
-	for (ScriptCodeCompletionOption &option : code_completion_option_sources) {
+	for (ScriptLanguage::CodeCompletionOption &option : code_completion_option_sources) {
 		if (single_quote && option.display.is_quoted()) {
 			option.display = option.display.unquote().quote("'");
 		}
@@ -2847,7 +2864,7 @@ void CodeEdit::_filter_code_completion_candidates_impl() {
 			completion_options_casei.push_back(option);
 		} else if (s.is_subsequence_of(option.display)) {
 			completion_options_subseq.push_back(option);
-		} else if (s.is_subsequence_ofi(option.display)) {
+		} else if (s.is_subsequence_ofn(option.display)) {
 			completion_options_subseq_casei.push_back(option);
 		}
 
@@ -2862,35 +2879,100 @@ void CodeEdit::_filter_code_completion_candidates_impl() {
 		const char32_t *tgt = &option.display[0];
 		const char32_t *tgt_lower = &display_lower[0];
 
-		const char32_t *ssq_last_tgt = nullptr;
-		const char32_t *ssq_lower_last_tgt = nullptr;
+		const char32_t *sst = &string_to_complete[0];
+		const char32_t *sst_lower = &display_lower[0];
 
-		for (; *tgt; tgt++, tgt_lower++) {
+		Vector<Pair<int, int>> ssq_matches;
+		int ssq_match_start = 0;
+		int ssq_match_len = 0;
+
+		Vector<Pair<int, int>> ssq_lower_matches;
+		int ssq_lower_match_start = 0;
+		int ssq_lower_match_len = 0;
+
+		int sst_start = -1;
+		int sst_lower_start = -1;
+
+		for (int i = 0; *tgt; tgt++, tgt_lower++, i++) {
+			// Check substring.
+			if (*sst == *tgt) {
+				sst++;
+				if (sst_start == -1) {
+					sst_start = i;
+				}
+			} else if (sst_start != -1 && *sst) {
+				sst = &string_to_complete[0];
+				sst_start = -1;
+			}
+
+			// Check subsequence.
 			if (*ssq == *tgt) {
 				ssq++;
-				ssq_last_tgt = tgt;
+				if (ssq_match_len == 0) {
+					ssq_match_start = i;
+				}
+				ssq_match_len++;
+			} else if (ssq_match_len > 0) {
+				ssq_matches.push_back(Pair<int, int>(ssq_match_start, ssq_match_len));
+				ssq_match_len = 0;
 			}
+
+			// Check lower substring.
+			if (*sst_lower == *tgt) {
+				sst_lower++;
+				if (sst_lower_start == -1) {
+					sst_lower_start = i;
+				}
+			} else if (sst_lower_start != -1 && *sst_lower) {
+				sst_lower = &string_to_complete[0];
+				sst_lower_start = -1;
+			}
+
+			// Check lower subsequence.
 			if (*ssq_lower == *tgt_lower) {
 				ssq_lower++;
-				ssq_lower_last_tgt = tgt;
+				if (ssq_lower_match_len == 0) {
+					ssq_lower_match_start = i;
+				}
+				ssq_lower_match_len++;
+			} else if (ssq_lower_match_len > 0) {
+				ssq_lower_matches.push_back(Pair<int, int>(ssq_lower_match_start, ssq_lower_match_len));
+				ssq_lower_match_len = 0;
 			}
 		}
 
 		/* Matched the whole subsequence in s. */
-		if (!*ssq) {
-			/* Finished matching in the first s.length() characters. */
-			if (ssq_last_tgt == &option.display[string_to_complete.length() - 1]) {
+		if (!*ssq) { // Matched the whole subsequence in s.
+			option.matches.clear();
+
+			if (sst_start == 0) { // Matched substring in beginning of s.
+				option.matches.push_back(Pair<int, int>(sst_start, string_to_complete.length()));
 				code_completion_options.push_back(option);
+			} else if (sst_start > 0) { // Matched substring in s.
+				option.matches.push_back(Pair<int, int>(sst_start, string_to_complete.length()));
+				completion_options_substr.push_back(option);
 			} else {
+				if (ssq_match_len > 0) {
+					ssq_matches.push_back(Pair<int, int>(ssq_match_start, ssq_match_len));
+				}
+				option.matches.append_array(ssq_matches);
 				completion_options_subseq.push_back(option);
 			}
 			max_width = MAX(max_width, font->get_string_size(option.display, font_size).width + offset);
-			/* Matched the whole subsequence in s_lower. */
-		} else if (!*ssq_lower) {
-			/* Finished matching in the first s.length() characters. */
-			if (ssq_lower_last_tgt == &option.display[string_to_complete.length() - 1]) {
+		} else if (!*ssq_lower) { // Matched the whole subsequence in s_lower.
+			option.matches.clear();
+
+			if (sst_lower_start == 0) { // Matched substring in beginning of s_lower.
+				option.matches.push_back(Pair<int, int>(sst_lower_start, string_to_complete.length()));
 				completion_options_casei.push_back(option);
+			} else if (sst_lower_start > 0) { // Matched substring in s_lower.
+				option.matches.push_back(Pair<int, int>(sst_lower_start, string_to_complete.length()));
+				completion_options_substr_casei.push_back(option);
 			} else {
+				if (ssq_lower_match_len > 0) {
+					ssq_lower_matches.push_back(Pair<int, int>(ssq_lower_match_start, ssq_lower_match_len));
+				}
+				option.matches.append_array(ssq_lower_matches);
 				completion_options_subseq_casei.push_back(option);
 			}
 			max_width = MAX(max_width, font->get_string_size(option.display, font_size).width + offset);
@@ -2990,7 +3072,7 @@ CodeEdit::CodeEdit() {
 	add_auto_brace_completion_pair("\"", "\"");
 	add_auto_brace_completion_pair("\'", "\'");
 
-	/* Delimiter traking */
+	/* Delimiter tracking */
 	add_string_delimiter("\"", "\"", false);
 	add_string_delimiter("\'", "\'", false);
 
@@ -3007,7 +3089,7 @@ CodeEdit::CodeEdit() {
 	set_gutter_draw(gutter_idx, false);
 	set_gutter_overwritable(gutter_idx, true);
 	set_gutter_type(gutter_idx, GUTTER_TYPE_CUSTOM);
-	set_gutter_custom_draw(gutter_idx, this, "_main_gutter_draw_callback");
+	set_gutter_custom_draw(gutter_idx, callable_mp(this, &CodeEdit::_main_gutter_draw_callback));
 	gutter_idx++;
 
 	/* Line numbers */
@@ -3015,7 +3097,7 @@ CodeEdit::CodeEdit() {
 	set_gutter_name(gutter_idx, "line_numbers");
 	set_gutter_draw(gutter_idx, false);
 	set_gutter_type(gutter_idx, GUTTER_TYPE_CUSTOM);
-	set_gutter_custom_draw(gutter_idx, this, "_line_number_draw_callback");
+	set_gutter_custom_draw(gutter_idx, callable_mp(this, &CodeEdit::_line_number_draw_callback));
 	gutter_idx++;
 
 	/* Fold Gutter */
@@ -3023,7 +3105,7 @@ CodeEdit::CodeEdit() {
 	set_gutter_name(gutter_idx, "fold_gutter");
 	set_gutter_draw(gutter_idx, false);
 	set_gutter_type(gutter_idx, GUTTER_TYPE_CUSTOM);
-	set_gutter_custom_draw(gutter_idx, this, "_fold_gutter_draw_callback");
+	set_gutter_custom_draw(gutter_idx, callable_mp(this, &CodeEdit::_fold_gutter_draw_callback));
 	gutter_idx++;
 
 	connect("lines_edited_from", callable_mp(this, &CodeEdit::_lines_edited_from));

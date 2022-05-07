@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -72,9 +72,9 @@ Input *Input::singleton = nullptr;
 
 void (*Input::set_mouse_mode_func)(Input::MouseMode) = nullptr;
 Input::MouseMode (*Input::get_mouse_mode_func)() = nullptr;
-void (*Input::warp_mouse_func)(const Vector2 &p_to_pos) = nullptr;
+void (*Input::warp_mouse_func)(const Vector2 &p_position) = nullptr;
 Input::CursorShape (*Input::get_current_cursor_shape_func)() = nullptr;
-void (*Input::set_custom_mouse_cursor_func)(const RES &, Input::CursorShape, const Vector2 &) = nullptr;
+void (*Input::set_custom_mouse_cursor_func)(const Ref<Resource> &, Input::CursorShape, const Vector2 &) = nullptr;
 
 Input *Input::get_singleton() {
 	return singleton;
@@ -90,6 +90,7 @@ Input::MouseMode Input::get_mouse_mode() const {
 }
 
 void Input::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("is_anything_pressed"), &Input::is_anything_pressed);
 	ClassDB::bind_method(D_METHOD("is_key_pressed", "keycode"), &Input::is_key_pressed);
 	ClassDB::bind_method(D_METHOD("is_physical_key_pressed", "keycode"), &Input::is_physical_key_pressed);
 	ClassDB::bind_method(D_METHOD("is_mouse_button_pressed", "button"), &Input::is_mouse_button_pressed);
@@ -121,11 +122,11 @@ void Input::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_accelerometer", "value"), &Input::set_accelerometer);
 	ClassDB::bind_method(D_METHOD("set_magnetometer", "value"), &Input::set_magnetometer);
 	ClassDB::bind_method(D_METHOD("set_gyroscope", "value"), &Input::set_gyroscope);
-	ClassDB::bind_method(D_METHOD("get_last_mouse_speed"), &Input::get_last_mouse_speed);
+	ClassDB::bind_method(D_METHOD("get_last_mouse_velocity"), &Input::get_last_mouse_velocity);
 	ClassDB::bind_method(D_METHOD("get_mouse_button_mask"), &Input::get_mouse_button_mask);
 	ClassDB::bind_method(D_METHOD("set_mouse_mode", "mode"), &Input::set_mouse_mode);
 	ClassDB::bind_method(D_METHOD("get_mouse_mode"), &Input::get_mouse_mode);
-	ClassDB::bind_method(D_METHOD("warp_mouse_position", "to"), &Input::warp_mouse_position);
+	ClassDB::bind_method(D_METHOD("warp_mouse", "position"), &Input::warp_mouse);
 	ClassDB::bind_method(D_METHOD("action_press", "action", "strength"), &Input::action_press, DEFVAL(1.f));
 	ClassDB::bind_method(D_METHOD("action_release", "action"), &Input::action_release);
 	ClassDB::bind_method(D_METHOD("set_default_cursor_shape", "shape"), &Input::set_default_cursor_shape, DEFVAL(CURSOR_ARROW));
@@ -183,39 +184,57 @@ void Input::get_argument_options(const StringName &p_function, int p_idx, List<S
 	}
 }
 
-void Input::SpeedTrack::update(const Vector2 &p_delta_p) {
+void Input::VelocityTrack::update(const Vector2 &p_delta_p) {
 	uint64_t tick = OS::get_singleton()->get_ticks_usec();
 	uint32_t tdiff = tick - last_tick;
 	float delta_t = tdiff / 1000000.0;
 	last_tick = tick;
 
+	if (delta_t > max_ref_frame) {
+		// First movement in a long time, reset and start again.
+		velocity = Vector2();
+		accum = p_delta_p;
+		accum_t = 0;
+		return;
+	}
+
 	accum += p_delta_p;
 	accum_t += delta_t;
 
-	if (accum_t > max_ref_frame * 10) {
-		accum_t = max_ref_frame * 10;
+	if (accum_t < min_ref_frame) {
+		// Not enough time has passed to calculate speed precisely.
+		return;
 	}
 
-	while (accum_t >= min_ref_frame) {
-		float slice_t = min_ref_frame / accum_t;
-		Vector2 slice = accum * slice_t;
-		accum = accum - slice;
-		accum_t -= min_ref_frame;
-
-		speed = (slice / min_ref_frame).lerp(speed, min_ref_frame / max_ref_frame);
-	}
-}
-
-void Input::SpeedTrack::reset() {
-	last_tick = OS::get_singleton()->get_ticks_usec();
-	speed = Vector2();
+	velocity = accum / accum_t;
+	accum = Vector2();
 	accum_t = 0;
 }
 
-Input::SpeedTrack::SpeedTrack() {
+void Input::VelocityTrack::reset() {
+	last_tick = OS::get_singleton()->get_ticks_usec();
+	velocity = Vector2();
+	accum = Vector2();
+	accum_t = 0;
+}
+
+Input::VelocityTrack::VelocityTrack() {
 	min_ref_frame = 0.1;
-	max_ref_frame = 0.3;
+	max_ref_frame = 3.0;
 	reset();
+}
+
+bool Input::is_anything_pressed() const {
+	_THREAD_SAFE_METHOD_
+
+	for (Map<StringName, Input::Action>::Element *E = action_state.front(); E; E = E->next()) {
+		if (E->get().pressed) {
+			return true;
+		}
+	}
+	return !keys_pressed.is_empty() ||
+			!joy_buttons_pressed.is_empty() ||
+			mouse_button_mask > MouseButton::NONE;
 }
 
 bool Input::is_key_pressed(Key p_keycode) const {
@@ -504,18 +523,20 @@ void Input::_parse_input_event_impl(const Ref<InputEvent> &p_event, bool p_is_em
 	Ref<InputEventMouseMotion> mm = p_event;
 
 	if (mm.is_valid()) {
-		Point2 pos = mm->get_global_position();
-		if (mouse_pos != pos) {
-			set_mouse_position(pos);
+		Point2 position = mm->get_global_position();
+		if (mouse_pos != position) {
+			set_mouse_position(position);
 		}
+		Vector2 relative = mm->get_relative();
+		mouse_velocity_track.update(relative);
 
 		if (event_dispatch_function && emulate_touch_from_mouse && !p_is_emulated && (mm->get_button_mask() & MouseButton::LEFT) != MouseButton::NONE) {
 			Ref<InputEventScreenDrag> drag_event;
 			drag_event.instantiate();
 
-			drag_event->set_position(mm->get_position());
-			drag_event->set_relative(mm->get_relative());
-			drag_event->set_speed(mm->get_speed());
+			drag_event->set_position(position);
+			drag_event->set_relative(relative);
+			drag_event->set_velocity(get_last_mouse_velocity());
 
 			event_dispatch_function(drag_event);
 		}
@@ -525,12 +546,12 @@ void Input::_parse_input_event_impl(const Ref<InputEvent> &p_event, bool p_is_em
 
 	if (st.is_valid()) {
 		if (st->is_pressed()) {
-			SpeedTrack &track = touch_speed_track[st->get_index()];
+			VelocityTrack &track = touch_velocity_track[st->get_index()];
 			track.reset();
 		} else {
 			// Since a pointer index may not occur again (OSs may or may not reuse them),
 			// imperatively remove it from the map to keep no fossil entries in it
-			touch_speed_track.erase(st->get_index());
+			touch_velocity_track.erase(st->get_index());
 		}
 
 		if (emulate_mouse_from_touch) {
@@ -570,9 +591,9 @@ void Input::_parse_input_event_impl(const Ref<InputEvent> &p_event, bool p_is_em
 	Ref<InputEventScreenDrag> sd = p_event;
 
 	if (sd.is_valid()) {
-		SpeedTrack &track = touch_speed_track[sd->get_index()];
+		VelocityTrack &track = touch_velocity_track[sd->get_index()];
 		track.update(sd->get_relative());
-		sd->set_speed(track.speed);
+		sd->set_velocity(track.velocity);
 
 		if (emulate_mouse_from_touch && sd->get_index() == mouse_from_touch_index) {
 			Ref<InputEventMouseMotion> motion_event;
@@ -582,7 +603,7 @@ void Input::_parse_input_event_impl(const Ref<InputEvent> &p_event, bool p_is_em
 			motion_event->set_position(sd->get_position());
 			motion_event->set_global_position(sd->get_position());
 			motion_event->set_relative(sd->get_relative());
-			motion_event->set_speed(sd->get_speed());
+			motion_event->set_velocity(sd->get_velocity());
 			motion_event->set_button_mask(mouse_button_mask);
 
 			_parse_input_event_impl(motion_event, true);
@@ -696,7 +717,6 @@ void Input::set_gyroscope(const Vector3 &p_gyroscope) {
 }
 
 void Input::set_mouse_position(const Point2 &p_posf) {
-	mouse_speed_track.update(p_posf - mouse_pos);
 	mouse_pos = p_posf;
 }
 
@@ -704,16 +724,17 @@ Point2 Input::get_mouse_position() const {
 	return mouse_pos;
 }
 
-Point2 Input::get_last_mouse_speed() const {
-	return mouse_speed_track.speed;
+Point2 Input::get_last_mouse_velocity() {
+	mouse_velocity_track.update(Vector2());
+	return mouse_velocity_track.velocity;
 }
 
 MouseButton Input::get_mouse_button_mask() const {
 	return mouse_button_mask; // do not trust OS implementation, should remove it - OS::get_singleton()->get_mouse_button_state();
 }
 
-void Input::warp_mouse_position(const Vector2 &p_to) {
-	warp_mouse_func(p_to);
+void Input::warp_mouse(const Vector2 &p_position) {
+	warp_mouse_func(p_position);
 }
 
 Point2i Input::warp_mouse_motion(const Ref<InputEventMouseMotion> &p_motion, const Rect2 &p_rect) {
@@ -735,7 +756,7 @@ Point2i Input::warp_mouse_motion(const Ref<InputEventMouseMotion> &p_motion, con
 	const Point2i pos_local = p_motion->get_global_position() - p_rect.position;
 	const Point2i pos_warped(Math::fposmod(pos_local.x, p_rect.size.x), Math::fposmod(pos_local.y, p_rect.size.y));
 	if (pos_warped != pos_local) {
-		warp_mouse_position(pos_warped + p_rect.position);
+		warp_mouse(pos_warped + p_rect.position);
 	}
 
 	return rel_warped;
@@ -751,6 +772,8 @@ void Input::action_press(const StringName &p_action, float p_strength) {
 	action.process_frame = Engine::get_singleton()->get_process_frames();
 	action.pressed = true;
 	action.strength = p_strength;
+	action.raw_strength = p_strength;
+	action.exact = true;
 
 	action_state[p_action] = action;
 }
@@ -762,6 +785,8 @@ void Input::action_release(const StringName &p_action) {
 	action.process_frame = Engine::get_singleton()->get_process_frames();
 	action.pressed = false;
 	action.strength = 0.f;
+	action.raw_strength = 0.f;
+	action.exact = true;
 
 	action_state[p_action] = action;
 }
@@ -825,10 +850,12 @@ Input::CursorShape Input::get_current_cursor_shape() const {
 	return get_current_cursor_shape_func();
 }
 
-void Input::set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot) {
+void Input::set_custom_mouse_cursor(const Ref<Resource> &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot) {
 	if (Engine::get_singleton()->is_editor_hint()) {
 		return;
 	}
+
+	ERR_FAIL_INDEX(p_shape, CursorShape::CURSOR_MAX);
 
 	set_custom_mouse_cursor_func(p_cursor, p_shape, p_hotspot);
 }
@@ -892,7 +919,8 @@ void Input::set_event_dispatch_function(EventDispatchFunc p_function) {
 void Input::joy_button(int p_device, JoyButton p_button, bool p_pressed) {
 	_THREAD_SAFE_METHOD_;
 	Joypad &joy = joy_names[p_device];
-	//printf("got button %i, mapping is %i\n", p_button, joy.mapping);
+	ERR_FAIL_INDEX((int)p_button, (int)JoyButton::MAX);
+
 	if (joy.last_buttons[(size_t)p_button] == p_pressed) {
 		return;
 	}
@@ -915,40 +943,25 @@ void Input::joy_button(int p_device, JoyButton p_button, bool p_pressed) {
 	// no event?
 }
 
-void Input::joy_axis(int p_device, JoyAxis p_axis, const JoyAxisValue &p_value) {
+void Input::joy_axis(int p_device, JoyAxis p_axis, float p_value) {
 	_THREAD_SAFE_METHOD_;
 
 	ERR_FAIL_INDEX((int)p_axis, (int)JoyAxis::MAX);
 
 	Joypad &joy = joy_names[p_device];
 
-	if (joy.last_axis[(size_t)p_axis] == p_value.value) {
+	if (joy.last_axis[(size_t)p_axis] == p_value) {
 		return;
 	}
 
-	//when changing direction quickly, insert fake event to release pending inputmap actions
-	float last = joy.last_axis[(size_t)p_axis];
-	if (p_value.min == 0 && (last < 0.25 || last > 0.75) && (last - 0.5) * (p_value.value - 0.5) < 0) {
-		JoyAxisValue jx;
-		jx.min = p_value.min;
-		jx.value = p_value.value < 0.5 ? 0.6 : 0.4;
-		joy_axis(p_device, p_axis, jx);
-	} else if (ABS(last) > 0.5 && last * p_value.value <= 0) {
-		JoyAxisValue jx;
-		jx.min = p_value.min;
-		jx.value = last > 0 ? 0.1 : -0.1;
-		joy_axis(p_device, p_axis, jx);
-	}
-
-	joy.last_axis[(size_t)p_axis] = p_value.value;
-	float val = p_value.min == 0 ? -1.0f + 2.0f * p_value.value : p_value.value;
+	joy.last_axis[(size_t)p_axis] = p_value;
 
 	if (joy.mapping == -1) {
-		_axis_event(p_device, p_axis, val);
+		_axis_event(p_device, p_axis, p_value);
 		return;
 	}
 
-	JoyEvent map = _get_mapped_axis_event(map_db[joy.mapping], p_axis, val);
+	JoyEvent map = _get_mapped_axis_event(map_db[joy.mapping], p_axis, p_value);
 
 	if (map.type == TYPE_BUTTON) {
 		bool pressed = map.value > 0.5;
@@ -988,10 +1001,15 @@ void Input::joy_axis(int p_device, JoyAxis p_axis, const JoyAxisValue &p_value) 
 	}
 
 	if (map.type == TYPE_AXIS) {
-		_axis_event(p_device, (JoyAxis)map.index, map.value);
+		JoyAxis axis = JoyAxis(map.index);
+		float value = map.value;
+		if (axis == JoyAxis::TRIGGER_LEFT || axis == JoyAxis::TRIGGER_RIGHT) {
+			// Convert to a value between 0.0f and 1.0f.
+			value = 0.5f + value / 2.0f;
+		}
+		_axis_event(p_device, axis, value);
 		return;
 	}
-	//printf("invalid mapping\n");
 }
 
 void Input::joy_hat(int p_device, HatMask p_val) {
@@ -1058,7 +1076,6 @@ void Input::_axis_event(int p_device, JoyAxis p_axis, float p_value) {
 
 Input::JoyEvent Input::_get_mapped_button_event(const JoyDeviceMapping &mapping, JoyButton p_button) {
 	JoyEvent event;
-	event.type = TYPE_MAX;
 
 	for (int i = 0; i < mapping.bindings.size(); i++) {
 		const JoyBinding binding = mapping.bindings[i];
@@ -1094,7 +1111,6 @@ Input::JoyEvent Input::_get_mapped_button_event(const JoyDeviceMapping &mapping,
 
 Input::JoyEvent Input::_get_mapped_axis_event(const JoyDeviceMapping &mapping, JoyAxis p_axis, float p_value) {
 	JoyEvent event;
-	event.type = TYPE_MAX;
 
 	for (int i = 0; i < mapping.bindings.size(); i++) {
 		const JoyBinding binding = mapping.bindings[i];
@@ -1133,7 +1149,6 @@ Input::JoyEvent Input::_get_mapped_axis_event(const JoyDeviceMapping &mapping, J
 								// It doesn't make sense for a full axis to map to a button,
 								// but keeping as a default for a trigger with a positive half-axis.
 								event.value = (shifted_positive_value * 2) - 1;
-								;
 								break;
 						}
 						return event;
@@ -1429,6 +1444,10 @@ Input::Input() {
 			parse_mapping(entries[i]);
 		}
 	}
+}
+
+Input::~Input() {
+	singleton = nullptr;
 }
 
 //////////////////////////////////////////////////////////

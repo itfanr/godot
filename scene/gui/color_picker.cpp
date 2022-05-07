@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -33,11 +33,11 @@
 #include "core/input/input.h"
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
+#include "scene/main/window.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_settings.h"
 #endif
-#include "scene/main/window.h"
 
 List<Color> ColorPicker::preset_cache;
 
@@ -45,7 +45,6 @@ void ColorPicker::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			_update_color();
-
 #ifdef TOOLS_ENABLED
 			if (Engine::get_singleton()->is_editor_hint()) {
 				if (preset_cache.is_empty()) {
@@ -437,7 +436,7 @@ ColorPicker::PickerShapeType ColorPicker::get_picker_shape() const {
 }
 
 inline int ColorPicker::_get_preset_size() {
-	return (int(get_minimum_size().width) - (preset_container->get_theme_constant(SNAME("hseparation")) * (preset_column_count - 1))) / preset_column_count;
+	return (int(get_minimum_size().width) - (preset_container->get_theme_constant(SNAME("h_separation")) * (preset_column_count - 1))) / preset_column_count;
 }
 
 void ColorPicker::_add_preset_button(int p_size, const Color &p_color) {
@@ -1222,7 +1221,7 @@ ColorPicker::ColorPicker() :
 
 	hhb->add_child(text_type);
 	text_type->set_text("#");
-	text_type->set_tooltip(TTR("Switch between hexadecimal and code values."));
+	text_type->set_tooltip(RTR("Switch between hexadecimal and code values."));
 	if (Engine::get_singleton()->is_editor_hint()) {
 		text_type->connect("pressed", callable_mp(this, &ColorPicker::_text_type_toggled));
 	} else {
@@ -1305,7 +1304,7 @@ void ColorPickerButton::pressed() {
 
 	Size2 size = get_size() * get_viewport()->get_canvas_transform().get_scale();
 
-	popup->set_as_minsize();
+	popup->reset_size();
 	picker->_update_presets();
 
 	Rect2i usable_rect = popup->get_usable_parent_rect();
@@ -1347,17 +1346,18 @@ void ColorPickerButton::_notification(int p_what) {
 				draw_texture(Control::get_theme_icon(SNAME("overbright_indicator"), SNAME("ColorPicker")), normal->get_offset());
 			}
 		} break;
+
 		case NOTIFICATION_WM_CLOSE_REQUEST: {
 			if (popup) {
 				popup->hide();
 			}
 		} break;
-	}
 
-	if (p_what == NOTIFICATION_VISIBILITY_CHANGED) {
-		if (popup && !is_visible_in_tree()) {
-			popup->hide();
-		}
+		case NOTIFICATION_VISIBILITY_CHANGED: {
+			if (popup && !is_visible_in_tree()) {
+				popup->hide();
+			}
+		} break;
 	}
 }
 
@@ -1429,7 +1429,8 @@ void ColorPickerButton::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "edit_alpha"), "set_edit_alpha", "is_editing_alpha");
 }
 
-ColorPickerButton::ColorPickerButton() {
+ColorPickerButton::ColorPickerButton(const String &p_text) :
+		Button(p_text) {
 	set_toggle_mode(true);
 }
 

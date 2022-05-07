@@ -89,10 +89,10 @@ def configure(env):
 
     if env["tools"]:
         if not env["threads_enabled"]:
-            print("Threads must be enabled to build the editor. Please add the 'threads_enabled=yes' option")
-            sys.exit(255)
+            print('Note: Forcing "threads_enabled=yes" as it is required for the web editor.')
+            env["threads_enabled"] = "yes"
         if env["initial_memory"] < 64:
-            print("Editor build requires at least 64MiB of initial memory. Forcing it.")
+            print('Note: Forcing "initial_memory=64" as it is required for the web editor.')
             env["initial_memory"] = 64
         env.Append(CCFLAGS=["-frtti"])
     elif env["builtin_icu"]:
@@ -212,6 +212,8 @@ def configure(env):
             sys.exit(255)
         env.Append(CCFLAGS=["-s", "RELOCATABLE=1"])
         env.Append(LINKFLAGS=["-s", "RELOCATABLE=1"])
+        # Weak symbols are broken upstream: https://github.com/emscripten-core/emscripten/issues/12819
+        env.Append(CPPDEFINES=["ZSTD_HAVE_WEAK_SYMBOLS=0"])
         env.extra_suffix = ".gdnative" + env.extra_suffix
 
     # Reduce code size by generating less support code (e.g. skip NodeJS support).

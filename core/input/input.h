@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -77,11 +77,6 @@ public:
 		JOYPADS_MAX = 16,
 	};
 
-	struct JoyAxisValue {
-		int min;
-		float value;
-	};
-
 	typedef void (*EventDispatchFunc)(const Ref<InputEvent> &p_event);
 
 private:
@@ -117,17 +112,17 @@ private:
 
 	int mouse_from_touch_index = -1;
 
-	struct SpeedTrack {
-		uint64_t last_tick;
-		Vector2 speed;
+	struct VelocityTrack {
+		uint64_t last_tick = 0;
+		Vector2 velocity;
 		Vector2 accum;
-		float accum_t;
+		float accum_t = 0.0f;
 		float min_ref_frame;
 		float max_ref_frame;
 
 		void update(const Vector2 &p_delta_p);
 		void reset();
-		SpeedTrack();
+		VelocityTrack();
 	};
 
 	struct Joypad {
@@ -141,8 +136,8 @@ private:
 		int hat_current = 0;
 	};
 
-	SpeedTrack mouse_speed_track;
-	Map<int, SpeedTrack> touch_speed_track;
+	VelocityTrack mouse_velocity_track;
+	Map<int, VelocityTrack> touch_velocity_track;
 	Map<int, Joypad> joy_names;
 	int fallback_mapping = -1;
 
@@ -162,9 +157,9 @@ private:
 	};
 
 	struct JoyEvent {
-		int type;
-		int index; // Can be either JoyAxis or JoyButton.
-		float value;
+		int type = TYPE_MAX;
+		int index = -1; // Can be either JoyAxis or JoyButton.
+		float value = 0.f;
 	};
 
 	struct JoyBinding {
@@ -221,10 +216,10 @@ private:
 
 	static void (*set_mouse_mode_func)(MouseMode);
 	static MouseMode (*get_mouse_mode_func)();
-	static void (*warp_mouse_func)(const Vector2 &p_to_pos);
+	static void (*warp_mouse_func)(const Vector2 &p_position);
 
 	static CursorShape (*get_current_cursor_shape_func)();
-	static void (*set_custom_mouse_cursor_func)(const RES &, CursorShape, const Vector2 &);
+	static void (*set_custom_mouse_cursor_func)(const Ref<Resource> &, CursorShape, const Vector2 &);
 
 	EventDispatchFunc event_dispatch_function = nullptr;
 
@@ -247,6 +242,7 @@ public:
 
 	static Input *get_singleton();
 
+	bool is_anything_pressed() const;
 	bool is_key_pressed(Key p_keycode) const;
 	bool is_physical_key_pressed(Key p_keycode) const;
 	bool is_mouse_button_pressed(MouseButton p_button) const;
@@ -274,10 +270,10 @@ public:
 	Vector3 get_gyroscope() const;
 
 	Point2 get_mouse_position() const;
-	Point2 get_last_mouse_speed() const;
+	Vector2 get_last_mouse_velocity();
 	MouseButton get_mouse_button_mask() const;
 
-	void warp_mouse_position(const Vector2 &p_to);
+	void warp_mouse(const Vector2 &p_position);
 	Point2i warp_mouse_motion(const Ref<InputEventMouseMotion> &p_motion, const Rect2 &p_rect);
 
 	void parse_input_event(const Ref<InputEvent> &p_event);
@@ -309,11 +305,11 @@ public:
 	CursorShape get_default_cursor_shape() const;
 	void set_default_cursor_shape(CursorShape p_shape);
 	CursorShape get_current_cursor_shape() const;
-	void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape = Input::CURSOR_ARROW, const Vector2 &p_hotspot = Vector2());
+	void set_custom_mouse_cursor(const Ref<Resource> &p_cursor, CursorShape p_shape = Input::CURSOR_ARROW, const Vector2 &p_hotspot = Vector2());
 
 	void parse_mapping(String p_mapping);
 	void joy_button(int p_device, JoyButton p_button, bool p_pressed);
-	void joy_axis(int p_device, JoyAxis p_axis, const JoyAxisValue &p_value);
+	void joy_axis(int p_device, JoyAxis p_axis, float p_value);
 	void joy_hat(int p_device, HatMask p_val);
 
 	void add_joy_mapping(String p_mapping, bool p_update_existing = false);
@@ -335,6 +331,7 @@ public:
 	void set_event_dispatch_function(EventDispatchFunc p_function);
 
 	Input();
+	~Input();
 };
 
 VARIANT_ENUM_CAST(Input::MouseMode);

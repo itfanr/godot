@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -471,7 +471,7 @@ Error ColladaImport::_create_mesh_surfaces(bool p_optimize, Ref<ImporterMesh> &p
 	bool local_xform_mirror = p_local_xform.basis.determinant() < 0;
 
 	if (p_morph_data) {
-		//add morphie target
+		//add morph target
 		ERR_FAIL_COND_V(!p_morph_data->targets.has("MORPH_TARGET"), ERR_INVALID_DATA);
 		String mt = p_morph_data->targets["MORPH_TARGET"];
 		ERR_FAIL_COND_V(!p_morph_data->sources.has(mt), ERR_INVALID_DATA);
@@ -994,13 +994,12 @@ Error ColladaImport::_create_mesh_surfaces(bool p_optimize, Ref<ImporterMesh> &p
 				Array a = p_morph_meshes[mi]->get_surface_arrays(surface);
 				//add valid weight and bone arrays if they exist, TODO check if they are unique to shape (generally not)
 
-				if (has_weights) {
-					a[Mesh::ARRAY_WEIGHTS] = d[Mesh::ARRAY_WEIGHTS];
-					a[Mesh::ARRAY_BONES] = d[Mesh::ARRAY_BONES];
+				// Enforce blend shape mask array format
+				for (int mj = 0; mj < Mesh::ARRAY_MAX; mj++) {
+					if (!(Mesh::ARRAY_FORMAT_BLEND_SHAPE_MASK & (1 << mj))) {
+						a[mj] = Variant();
+					}
 				}
-
-				a[Mesh::ARRAY_INDEX] = Variant();
-				//a.resize(Mesh::ARRAY_MAX); //no need for index
 				mr.push_back(a);
 			}
 
@@ -1535,7 +1534,7 @@ void ColladaImport::create_animation(int p_clip, bool p_import_value_tracks) {
 		bool has_rotation = false;
 		bool has_scale = false;
 
-		for (int i = 0; cn->xform_list.size(); i++) {
+		for (int i = 0; i < cn->xform_list.size(); i++) {
 			switch (cn->xform_list[i].op) {
 				case Collada::Node::XForm::OP_ROTATE: {
 					has_rotation = true;
@@ -1755,7 +1754,7 @@ void EditorSceneFormatImporterCollada::get_extensions(List<String> *r_extensions
 	r_extensions->push_back("dae");
 }
 
-Node *EditorSceneFormatImporterCollada::import_scene(const String &p_path, uint32_t p_flags, int p_bake_fps, List<String> *r_missing_deps, Error *r_err) {
+Node *EditorSceneFormatImporterCollada::import_scene(const String &p_path, uint32_t p_flags, const Map<StringName, Variant> &p_options, int p_bake_fps, List<String> *r_missing_deps, Error *r_err) {
 	if (r_err) {
 		*r_err = OK;
 	}
@@ -1802,34 +1801,20 @@ Node *EditorSceneFormatImporterCollada::import_scene(const String &p_path, uint3
 				name = state.animations[i]->get_name();
 			}
 
-			ap->add_animation(name, state.animations[i]);
+			Ref<AnimationLibrary> library;
+			if (!ap->has_animation_library("")) {
+				library.instantiate();
+				ap->add_animation_library("", library);
+			} else {
+				library = ap->get_animation_library("");
+			}
+			library->add_animation(name, state.animations[i]);
 		}
 		state.scene->add_child(ap, true);
 		ap->set_owner(state.scene);
 	}
 
 	return state.scene;
-}
-
-Ref<Animation> EditorSceneFormatImporterCollada::import_animation(const String &p_path, uint32_t p_flags, int p_bake_fps) {
-	ColladaImport state;
-
-	state.use_mesh_builtin_materials = false;
-
-	Error err = state.load(p_path, Collada::IMPORT_FLAG_ANIMATION, p_flags & EditorSceneFormatImporter::IMPORT_GENERATE_TANGENT_ARRAYS);
-	ERR_FAIL_COND_V_MSG(err != OK, RES(), "Cannot load animation from file '" + p_path + "'.");
-
-	state.create_animations(true);
-	if (state.scene) {
-		memdelete(state.scene);
-	}
-
-	if (state.animations.size() == 0) {
-		return Ref<Animation>();
-	}
-	Ref<Animation> anim = state.animations[0];
-
-	return anim;
 }
 
 EditorSceneFormatImporterCollada::EditorSceneFormatImporterCollada() {

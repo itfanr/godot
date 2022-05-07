@@ -76,19 +76,15 @@ layout(set = 0, binding = 10) uniform sampler shadow_sampler;
 #define MAX_VOXEL_GI_INSTANCES 8
 
 struct VoxelGIData {
-	mat4 xform;
-	vec3 bounds;
-	float dynamic_range;
+	mat4 xform; // 64 - 64
 
-	float bias;
-	float normal_bias;
-	bool blend_ambient;
-	uint texture_slot;
+	vec3 bounds; // 12 - 76
+	float dynamic_range; // 4 - 80
 
-	float anisotropy_strength;
-	float ambient_occlusion;
-	float ambient_occlusion_size;
-	uint mipmaps;
+	float bias; // 4 - 84
+	float normal_bias; // 4 - 88
+	bool blend_ambient; // 4 - 92
+	uint mipmaps; // 4 - 96
 };
 
 layout(set = 0, binding = 11, std140) uniform VoxelGIs {
@@ -239,7 +235,6 @@ void cluster_get_item_range(uint p_offset, out uint item_min, out uint item_max,
 	uint item_min_max = cluster_buffer.data[p_offset];
 	item_min = item_min_max & 0xFFFF;
 	item_max = item_min_max >> 16;
-	;
 
 	item_from = item_min >> 5;
 	item_to = (item_max == 0) ? 0 : ((item_max - 1) >> 5) + 1; //side effect of how it is stored, as item_max 0 means no elements
@@ -387,7 +382,6 @@ void main() {
 				float depth_z = -view_pos.z;
 
 				vec4 pssm_coord;
-				vec3 shadow_color = directional_lights.data[i].shadow_color1.rgb;
 				vec3 light_dir = directional_lights.data[i].direction;
 				vec4 v = vec4(view_pos, 1.0);
 				float z_range;
@@ -418,7 +412,7 @@ void main() {
 
 				shadow = mix(shadow, 1.0, smoothstep(directional_lights.data[i].fade_from, directional_lights.data[i].fade_to, view_pos.z)); //done with negative values for performance
 
-				shadow_attenuation = mix(shadow_color, vec3(1.0), shadow);
+				shadow_attenuation = mix(vec3(0.0), vec3(1.0), shadow);
 			}
 
 			total_light += shadow_attenuation * directional_lights.data[i].color * directional_lights.data[i].energy * henyey_greenstein(dot(normalize(view_pos), normalize(directional_lights.data[i].direction)), params.phase_g);

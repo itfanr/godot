@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -44,6 +44,7 @@
 #include "editor/create_dialog.h"
 #include "editor/dictionary_property_edit.h"
 #include "editor/editor_export.h"
+#include "editor/editor_file_dialog.h"
 #include "editor/editor_file_system.h"
 #include "editor/editor_help.h"
 #include "editor/editor_node.h"
@@ -52,6 +53,7 @@
 #include "editor/filesystem_dock.h"
 #include "editor/multi_node_edit.h"
 #include "editor/property_selector.h"
+#include "editor/scene_tree_dock.h"
 #include "scene/gui/label.h"
 #include "scene/main/window.h"
 #include "scene/resources/font.h"
@@ -83,7 +85,7 @@ bool EditorResourceConversionPlugin::handles(const Ref<Resource> &p_resource) co
 }
 
 Ref<Resource> EditorResourceConversionPlugin::convert(const Ref<Resource> &p_resource) const {
-	RES ret;
+	Ref<Resource> ret;
 	if (GDVIRTUAL_CALL(_convert, p_resource, ret)) {
 		return ret;
 	}
@@ -92,8 +94,10 @@ Ref<Resource> EditorResourceConversionPlugin::convert(const Ref<Resource> &p_res
 }
 
 void CustomPropertyEditor::_notification(int p_what) {
-	if (p_what == NOTIFICATION_WM_CLOSE_REQUEST) {
-		hide();
+	switch (p_what) {
+		case NOTIFICATION_WM_CLOSE_REQUEST: {
+			hide();
+		} break;
 	}
 }
 
@@ -147,7 +151,7 @@ void CustomPropertyEditor::_menu_option(int p_which) {
 				} break;
 
 				case OBJ_MENU_EDIT: {
-					REF r = v;
+					Ref<RefCounted> r = v;
 
 					if (!r.is_null()) {
 						emit_signal(SNAME("resource_edit_request"));
@@ -208,29 +212,29 @@ void CustomPropertyEditor::_menu_option(int p_which) {
 				} break;
 				case OBJ_MENU_NEW_SCRIPT: {
 					if (Object::cast_to<Node>(owner)) {
-						EditorNode::get_singleton()->get_scene_tree_dock()->open_script_dialog(Object::cast_to<Node>(owner), false);
+						SceneTreeDock::get_singleton()->open_script_dialog(Object::cast_to<Node>(owner), false);
 					}
 
 				} break;
 				case OBJ_MENU_EXTEND_SCRIPT: {
 					if (Object::cast_to<Node>(owner)) {
-						EditorNode::get_singleton()->get_scene_tree_dock()->open_script_dialog(Object::cast_to<Node>(owner), true);
+						SceneTreeDock::get_singleton()->open_script_dialog(Object::cast_to<Node>(owner), true);
 					}
 
 				} break;
 				case OBJ_MENU_SHOW_IN_FILE_SYSTEM: {
-					RES r = v;
-					FileSystemDock *file_system_dock = EditorNode::get_singleton()->get_filesystem_dock();
+					Ref<Resource> r = v;
+					FileSystemDock *file_system_dock = FileSystemDock::get_singleton();
 					file_system_dock->navigate_to_path(r->get_path());
 					// Ensure that the FileSystem dock is visible.
 					TabContainer *tab_container = (TabContainer *)file_system_dock->get_parent_control();
-					tab_container->set_current_tab(file_system_dock->get_index());
+					tab_container->set_current_tab(tab_container->get_tab_idx_from_control(file_system_dock));
 				} break;
 				default: {
 					if (p_which >= CONVERT_BASE_ID) {
 						int to_type = p_which - CONVERT_BASE_ID;
 
-						Vector<Ref<EditorResourceConversionPlugin>> conversions = EditorNode::get_singleton()->find_resource_conversion_plugin(RES(v));
+						Vector<Ref<EditorResourceConversionPlugin>> conversions = EditorNode::get_singleton()->find_resource_conversion_plugin(Ref<Resource>(v));
 
 						ERR_FAIL_INDEX(to_type, conversions.size());
 
@@ -269,7 +273,9 @@ void CustomPropertyEditor::_menu_option(int p_which) {
 						res->call("set_instance_base_type", owner->get_class());
 					}
 
+					EditorNode::get_editor_data().instantiate_object_properties(obj);
 					v = obj;
+
 					emit_signal(SNAME("variant_changed"));
 
 				} break;
@@ -506,12 +512,16 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 
 		} break;
 		case Variant::STRING: {
-			if (hint == PROPERTY_HINT_FILE || hint == PROPERTY_HINT_GLOBAL_FILE) {
+			if (hint == PROPERTY_HINT_LOCALE_ID) {
+				List<String> names;
+				names.push_back(TTR("Locale..."));
+				names.push_back(TTR("Clear"));
+				config_action_buttons(names);
+			} else if (hint == PROPERTY_HINT_FILE || hint == PROPERTY_HINT_GLOBAL_FILE) {
 				List<String> names;
 				names.push_back(TTR("File..."));
 				names.push_back(TTR("Clear"));
 				config_action_buttons(names);
-
 			} else if (hint == PROPERTY_HINT_DIR || hint == PROPERTY_HINT_GLOBAL_DIR) {
 				List<String> names;
 				names.push_back(TTR("Dir..."));
@@ -619,7 +629,7 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 				MAKE_PROPSELECT
 				Variant::Type type = Variant::NIL;
 				String tname = hint_text;
-				if (tname.find(".") != -1) {
+				if (tname.contains(".")) {
 					tname = tname.get_slice(".", 0);
 				}
 				for (int i = 0; i < Variant::VARIANT_MAX; i++) {
@@ -758,7 +768,7 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 
 			Transform2D basis = v;
 			for (int i = 0; i < 6; i++) {
-				value_editor[i]->set_text(String::num(basis.elements[i / 2][i % 2]));
+				value_editor[i]->set_text(String::num(basis.columns[i / 2][i % 2]));
 			}
 
 		} break;
@@ -776,7 +786,7 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 
 			Basis basis = v;
 			for (int i = 0; i < 9; i++) {
-				value_editor[i]->set_text(String::num(basis.elements[i / 3][i % 3]));
+				value_editor[i]->set_text(String::num(basis.rows[i / 3][i % 3]));
 			}
 
 		} break;
@@ -797,7 +807,7 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 
 			Transform3D tr = v;
 			for (int i = 0; i < 9; i++) {
-				value_editor[(i / 3) * 4 + i % 3]->set_text(String::num(tr.basis.elements[i / 3][i % 3]));
+				value_editor[(i / 3) * 4 + i % 3]->set_text(String::num(tr.basis.rows[i / 3][i % 3]));
 			}
 
 			value_editor[3]->set_text(String::num(tr.origin.x));
@@ -810,7 +820,7 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 				//late init for performance
 				color_picker = memnew(ColorPicker);
 				color_picker->set_deferred_mode(true);
-				add_child(color_picker);
+				value_vbox->add_child(color_picker);
 				color_picker->hide();
 				color_picker->connect("color_changed", callable_mp(this, &CustomPropertyEditor::_color_changed));
 
@@ -897,7 +907,7 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 							}
 						}
 
-						if (!is_custom_resource && !ClassDB::can_instantiate(t)) {
+						if (!is_custom_resource && (!ClassDB::can_instantiate(t) || ClassDB::is_virtual(t))) {
 							continue;
 						}
 
@@ -918,19 +928,19 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 
 			menu->add_item(TTR("Load"), OBJ_MENU_LOAD);
 
-			if (!RES(v).is_null()) {
+			if (!Ref<Resource>(v).is_null()) {
 				menu->add_item(TTR("Edit"), OBJ_MENU_EDIT);
 				menu->add_item(TTR("Clear"), OBJ_MENU_CLEAR);
 				menu->add_item(TTR("Make Unique"), OBJ_MENU_MAKE_UNIQUE);
 
-				RES r = v;
+				Ref<Resource> r = v;
 				if (r.is_valid() && r->get_path().is_resource_file()) {
 					menu->add_separator();
 					menu->add_item(TTR("Show in FileSystem"), OBJ_MENU_SHOW_IN_FILE_SYSTEM);
 				}
 			}
 
-			RES cb = EditorSettings::get_singleton()->get_resource_clipboard();
+			Ref<Resource> cb = EditorSettings::get_singleton()->get_resource_clipboard();
 			bool paste_valid = false;
 			if (cb.is_valid()) {
 				if (hint_text.is_empty()) {
@@ -945,10 +955,10 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 				}
 			}
 
-			if (!RES(v).is_null() || paste_valid) {
+			if (!Ref<Resource>(v).is_null() || paste_valid) {
 				menu->add_separator();
 
-				if (!RES(v).is_null()) {
+				if (!Ref<Resource>(v).is_null()) {
 					menu->add_item(TTR("Copy"), OBJ_MENU_COPY);
 				}
 
@@ -957,8 +967,8 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 				}
 			}
 
-			if (!RES(v).is_null()) {
-				Vector<Ref<EditorResourceConversionPlugin>> conversions = EditorNode::get_singleton()->find_resource_conversion_plugin(RES(v));
+			if (!Ref<Resource>(v).is_null()) {
+				Vector<Ref<EditorResourceConversionPlugin>> conversions = EditorNode::get_singleton()->find_resource_conversion_plugin(Ref<Resource>(v));
 				if (conversions.size()) {
 					menu->add_separator();
 				}
@@ -1019,7 +1029,7 @@ void CustomPropertyEditor::_file_selected(String p_file) {
 		case Variant::OBJECT: {
 			String type = (hint == PROPERTY_HINT_RESOURCE_TYPE) ? hint_text : String();
 
-			RES res = ResourceLoader::load(p_file, type);
+			Ref<Resource> res = ResourceLoader::load(p_file, type);
 			if (res.is_null()) {
 				error->set_text(TTR("Error loading file: Not a resource!"));
 				error->popup_centered();
@@ -1031,6 +1041,14 @@ void CustomPropertyEditor::_file_selected(String p_file) {
 		} break;
 		default: {
 		}
+	}
+}
+
+void CustomPropertyEditor::_locale_selected(String p_locale) {
+	if (type == Variant::STRING && hint == PROPERTY_HINT_LOCALE_ID) {
+		v = p_locale;
+		emit_signal(SNAME("variant_changed"));
+		hide();
 	}
 }
 
@@ -1080,7 +1098,9 @@ void CustomPropertyEditor::_type_create_selected(int p_idx) {
 		ERR_FAIL_COND(!obj);
 		ERR_FAIL_COND(!Object::cast_to<Resource>(obj));
 
+		EditorNode::get_editor_data().instantiate_object_properties(obj);
 		v = obj;
+
 		emit_signal(SNAME("variant_changed"));
 		hide();
 	}
@@ -1177,7 +1197,8 @@ void CustomPropertyEditor::_action_pressed(int p_which) {
 		case Variant::STRING: {
 			if (hint == PROPERTY_HINT_MULTILINE_TEXT) {
 				hide();
-
+			} else if (hint == PROPERTY_HINT_LOCALE_ID) {
+				locale->popup_locale_dialog();
 			} else if (hint == PROPERTY_HINT_FILE || hint == PROPERTY_HINT_GLOBAL_FILE) {
 				if (p_which == 0) {
 					if (hint == PROPERTY_HINT_FILE) {
@@ -1243,7 +1264,7 @@ void CustomPropertyEditor::_action_pressed(int p_which) {
 				if (owner->is_class("Node") && (v.get_type() == Variant::NODE_PATH) && Object::cast_to<Node>(owner)->has_node(v)) {
 					Node *target_node = Object::cast_to<Node>(owner)->get_node(v);
 					EditorNode::get_singleton()->get_editor_selection()->clear();
-					EditorNode::get_singleton()->get_scene_tree_dock()->set_selected(target_node);
+					SceneTreeDock::get_singleton()->set_selected(target_node);
 				}
 
 				hide();
@@ -1270,7 +1291,9 @@ void CustomPropertyEditor::_action_pressed(int p_which) {
 					ERR_BREAK(!obj);
 					ERR_BREAK(!Object::cast_to<Resource>(obj));
 
+					EditorNode::get_editor_data().instantiate_object_properties(obj);
 					v = obj;
+
 					emit_signal(SNAME("variant_changed"));
 					hide();
 				}
@@ -1289,7 +1312,7 @@ void CustomPropertyEditor::_action_pressed(int p_which) {
 				file->popup_file_dialog();
 
 			} else if (p_which == 2) {
-				RES r = v;
+				Ref<Resource> r = v;
 
 				if (!r.is_null()) {
 					emit_signal(SNAME("resource_edit_request"));
@@ -1545,7 +1568,7 @@ void CustomPropertyEditor::_modified(String p_string) {
 		case Variant::TRANSFORM2D: {
 			Transform2D m;
 			for (int i = 0; i < 6; i++) {
-				m.elements[i / 2][i % 2] = _parse_real_expression(value_editor[i]->get_text());
+				m.columns[i / 2][i % 2] = _parse_real_expression(value_editor[i]->get_text());
 			}
 
 			v = m;
@@ -1557,7 +1580,7 @@ void CustomPropertyEditor::_modified(String p_string) {
 		case Variant::BASIS: {
 			Basis m;
 			for (int i = 0; i < 9; i++) {
-				m.elements[i / 3][i % 3] = _parse_real_expression(value_editor[i]->get_text());
+				m.rows[i / 3][i % 3] = _parse_real_expression(value_editor[i]->get_text());
 			}
 
 			v = m;
@@ -1569,7 +1592,7 @@ void CustomPropertyEditor::_modified(String p_string) {
 		case Variant::TRANSFORM3D: {
 			Basis basis;
 			for (int i = 0; i < 9; i++) {
-				basis.elements[i / 3][i % 3] = _parse_real_expression(value_editor[(i / 3) * 4 + i % 3]->get_text());
+				basis.rows[i / 3][i % 3] = _parse_real_expression(value_editor[(i / 3) * 4 + i % 3]->get_text());
 			}
 
 			Vector3 origin;
@@ -1748,9 +1771,6 @@ void CustomPropertyEditor::_bind_methods() {
 }
 
 CustomPropertyEditor::CustomPropertyEditor() {
-	read_only = false;
-	updating = false;
-
 	value_vbox = memnew(VBoxContainer);
 	add_child(value_vbox);
 
@@ -1820,6 +1840,12 @@ CustomPropertyEditor::CustomPropertyEditor() {
 
 	file->connect("file_selected", callable_mp(this, &CustomPropertyEditor::_file_selected));
 	file->connect("dir_selected", callable_mp(this, &CustomPropertyEditor::_file_selected));
+
+	locale = memnew(EditorLocaleDialog);
+	value_vbox->add_child(locale);
+	locale->hide();
+
+	locale->connect("locale_selected", callable_mp(this, &CustomPropertyEditor::_locale_selected));
 
 	error = memnew(ConfirmationDialog);
 	error->set_title(TTR("Error!"));

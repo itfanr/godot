@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,6 +32,22 @@
 
 #include "core/config/project_settings.h"
 #include "core/string/print_string.h"
+
+void PhysicsServer3DRenderingServerHandler::set_vertex(int p_vertex_id, const void *p_vector3) {
+	GDVIRTUAL_REQUIRED_CALL(_set_vertex, p_vertex_id, p_vector3);
+}
+void PhysicsServer3DRenderingServerHandler::set_normal(int p_vertex_id, const void *p_vector3) {
+	GDVIRTUAL_REQUIRED_CALL(_set_normal, p_vertex_id, p_vector3);
+}
+void PhysicsServer3DRenderingServerHandler::set_aabb(const AABB &p_aabb) {
+	GDVIRTUAL_REQUIRED_CALL(_set_aabb, p_aabb);
+}
+
+void PhysicsServer3DRenderingServerHandler::_bind_methods() {
+	GDVIRTUAL_BIND(_set_vertex, "vertex_id", "vertices");
+	GDVIRTUAL_BIND(_set_normal, "vertex_id", "normals");
+	GDVIRTUAL_BIND(_set_aabb, "aabb");
+}
 
 PhysicsServer3D *PhysicsServer3D::singleton = nullptr;
 
@@ -246,7 +262,7 @@ void PhysicsPointQueryParameters3D::_bind_methods() {
 
 ///////////////////////////////////////////////////////
 
-void PhysicsShapeQueryParameters3D::set_shape(const RES &p_shape_ref) {
+void PhysicsShapeQueryParameters3D::set_shape(const Ref<Resource> &p_shape_ref) {
 	ERR_FAIL_COND(p_shape_ref.is_null());
 	shape_ref = p_shape_ref;
 	parameters.shape_rid = p_shape_ref->get_rid();
@@ -254,7 +270,7 @@ void PhysicsShapeQueryParameters3D::set_shape(const RES &p_shape_ref) {
 
 void PhysicsShapeQueryParameters3D::set_shape_rid(const RID &p_shape) {
 	if (parameters.shape_rid != p_shape) {
-		shape_ref = RES();
+		shape_ref = Ref<Resource>();
 		parameters.shape_rid = p_shape;
 	}
 }
@@ -339,6 +355,8 @@ Dictionary PhysicsDirectSpaceState3D::_intersect_ray(const Ref<PhysicsRayQueryPa
 }
 
 Array PhysicsDirectSpaceState3D::_intersect_point(const Ref<PhysicsPointQueryParameters3D> &p_point_query, int p_max_results) {
+	ERR_FAIL_COND_V(p_point_query.is_null(), Array());
+
 	Vector<ShapeResult> ret;
 	ret.resize(p_max_results);
 

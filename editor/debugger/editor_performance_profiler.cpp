@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,6 +30,7 @@
 
 #include "editor_performance_profiler.h"
 
+#include "editor/editor_property_name_processor.h"
 #include "editor/editor_scale.h"
 #include "editor/editor_settings.h"
 #include "main/performance.h"
@@ -386,8 +387,8 @@ EditorPerformanceProfiler::EditorPerformanceProfiler() {
 	monitor_draw->add_child(info_message);
 
 	for (int i = 0; i < Performance::MONITOR_MAX; i++) {
-		String base = Performance::get_singleton()->get_monitor_name(Performance::Monitor(i)).get_slicec('/', 0).capitalize();
-		String name = Performance::get_singleton()->get_monitor_name(Performance::Monitor(i)).get_slicec('/', 1).capitalize();
+		String base = EditorPropertyNameProcessor::get_singleton()->process_name(Performance::get_singleton()->get_monitor_name(Performance::Monitor(i)).get_slicec('/', 0), EditorPropertyNameProcessor::STYLE_CAPITALIZED);
+		String name = EditorPropertyNameProcessor::get_singleton()->process_name(Performance::get_singleton()->get_monitor_name(Performance::Monitor(i)).get_slicec('/', 1), EditorPropertyNameProcessor::STYLE_CAPITALIZED);
 		monitors.insert(Performance::get_singleton()->get_monitor_name(Performance::Monitor(i)), Monitor(name, base, i, Performance::get_singleton()->get_monitor_type(Performance::Monitor(i)), nullptr));
 	}
 

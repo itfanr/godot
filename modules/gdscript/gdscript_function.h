@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -259,6 +259,7 @@ public:
 		OPCODE_CALL_METHOD_BIND,
 		OPCODE_CALL_METHOD_BIND_RET,
 		OPCODE_CALL_BUILTIN_STATIC,
+		OPCODE_CALL_NATIVE_STATIC,
 		// ptrcall have one instruction per return type.
 		OPCODE_CALL_PTRCALL_NO_RETURN,
 		OPCODE_CALL_PTRCALL_BOOL,
@@ -298,6 +299,7 @@ public:
 		OPCODE_AWAIT,
 		OPCODE_AWAIT_RESUME,
 		OPCODE_CREATE_LAMBDA,
+		OPCODE_CREATE_SELF_LAMBDA,
 		OPCODE_JUMP,
 		OPCODE_JUMP_IF,
 		OPCODE_JUMP_IF_NOT,
@@ -364,7 +366,7 @@ public:
 		OPCODE_TYPE_ADJUST_QUATERNION,
 		OPCODE_TYPE_ADJUST_AABB,
 		OPCODE_TYPE_ADJUST_BASIS,
-		OPCODE_TYPE_ADJUST_TRANSFORM,
+		OPCODE_TYPE_ADJUST_TRANSFORM3D,
 		OPCODE_TYPE_ADJUST_COLOR,
 		OPCODE_TYPE_ADJUST_STRING_NAME,
 		OPCODE_TYPE_ADJUST_NODE_PATH,
@@ -501,6 +503,8 @@ private:
 #endif
 
 	List<StackDebug> stack_debug;
+
+	Variant _get_default_variant_for_data_type(const GDScriptDataType &p_data_type);
 
 	_FORCE_INLINE_ Variant *_get_variant(int p_address, GDScriptInstance *p_instance, Variant *p_stack, String &r_error) const;
 	_FORCE_INLINE_ String _get_call_error(const Callable::CallError &p_err, const String &p_where, const Variant **argptrs) const;

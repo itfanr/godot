@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,21 +31,22 @@
 #ifndef GPU_PARTICLES_COLLISION_SDF_EDITOR_PLUGIN_H
 #define GPU_PARTICLES_COLLISION_SDF_EDITOR_PLUGIN_H
 
-#include "editor/editor_node.h"
 #include "editor/editor_plugin.h"
 #include "scene/3d/gpu_particles_collision_3d.h"
 #include "scene/resources/material.h"
 
+struct EditorProgress;
+class EditorFileDialog;
+
 class GPUParticlesCollisionSDF3DEditorPlugin : public EditorPlugin {
 	GDCLASS(GPUParticlesCollisionSDF3DEditorPlugin, EditorPlugin);
 
-	GPUParticlesCollisionSDF3D *col_sdf;
+	GPUParticlesCollisionSDF3D *col_sdf = nullptr;
 
-	HBoxContainer *bake_hb;
-	Button *bake;
-	EditorNode *editor;
+	HBoxContainer *bake_hb = nullptr;
+	Button *bake = nullptr;
 
-	EditorFileDialog *probe_file;
+	EditorFileDialog *probe_file = nullptr;
 
 	static EditorProgress *tmp_progress;
 	static void bake_func_begin(int p_steps);
@@ -66,7 +67,7 @@ public:
 	virtual bool handles(Object *p_object) const override;
 	virtual void make_visible(bool p_visible) override;
 
-	GPUParticlesCollisionSDF3DEditorPlugin(EditorNode *p_node);
+	GPUParticlesCollisionSDF3DEditorPlugin();
 	~GPUParticlesCollisionSDF3DEditorPlugin();
 };
 

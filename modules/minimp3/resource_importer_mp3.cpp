@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -75,9 +75,8 @@ Error ResourceImporterMP3::import(const String &p_source_file, const String &p_s
 	bool loop = p_options["loop"];
 	float loop_offset = p_options["loop_offset"];
 
-	FileAccess *f = FileAccess::open(p_source_file, FileAccess::READ);
-
-	ERR_FAIL_COND_V(!f, ERR_CANT_OPEN);
+	Ref<FileAccess> f = FileAccess::open(p_source_file, FileAccess::READ);
+	ERR_FAIL_COND_V(f.is_null(), ERR_CANT_OPEN);
 
 	uint64_t len = f->get_length();
 
@@ -86,8 +85,6 @@ Error ResourceImporterMP3::import(const String &p_source_file, const String &p_s
 	uint8_t *w = data.ptrw();
 
 	f->get_buffer(w, len);
-
-	memdelete(f);
 
 	Ref<AudioStreamMP3> mp3_stream;
 	mp3_stream.instantiate();

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,9 +32,11 @@
 
 #include "core/io/dir_access.h"
 #include "core/io/json.h"
+#include "editor/editor_file_dialog.h"
+#include "editor/editor_node.h"
+#include "editor/editor_property_name_processor.h"
+#include "editor/editor_scale.h"
 #include "editor/editor_settings.h"
-#include "editor_node.h"
-#include "editor_scale.h"
 
 const char *EditorFeatureProfile::feature_names[FEATURE_MAX] = {
 	TTRC("3D Editor"),
@@ -196,13 +198,12 @@ Error EditorFeatureProfile::save_to_file(const String &p_path) {
 
 	data["disabled_features"] = dis_features;
 
-	FileAccessRef f = FileAccess::open(p_path, FileAccess::WRITE);
-	ERR_FAIL_COND_V_MSG(!f, ERR_CANT_CREATE, "Cannot create file '" + p_path + "'.");
+	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::WRITE);
+	ERR_FAIL_COND_V_MSG(f.is_null(), ERR_CANT_CREATE, "Cannot create file '" + p_path + "'.");
 
 	JSON json;
 	String text = json.stringify(data, "\t");
 	f->store_string(text);
-	f->close();
 	return OK;
 }
 
@@ -308,18 +309,20 @@ EditorFeatureProfile::EditorFeatureProfile() {}
 //////////////////////////
 
 void EditorFeatureProfileManager::_notification(int p_what) {
-	if (p_what == NOTIFICATION_READY) {
-		current_profile = EDITOR_GET("_default_feature_profile");
-		if (!current_profile.is_empty()) {
-			current.instantiate();
-			Error err = current->load_from_file(EditorSettings::get_singleton()->get_feature_profiles_dir().plus_file(current_profile + ".profile"));
-			if (err != OK) {
-				ERR_PRINT("Error loading default feature profile: " + current_profile);
-				current_profile = String();
-				current.unref();
+	switch (p_what) {
+		case NOTIFICATION_READY: {
+			current_profile = EDITOR_GET("_default_feature_profile");
+			if (!current_profile.is_empty()) {
+				current.instantiate();
+				Error err = current->load_from_file(EditorSettings::get_singleton()->get_feature_profiles_dir().plus_file(current_profile + ".profile"));
+				if (err != OK) {
+					ERR_PRINT("Error loading default feature profile: " + current_profile);
+					current_profile = String();
+					current.unref();
+				}
 			}
-		}
-		_update_profile_list(current_profile);
+			_update_profile_list(current_profile);
+		} break;
 	}
 }
 
@@ -346,8 +349,8 @@ void EditorFeatureProfileManager::_update_profile_list(const String &p_select_pr
 	}
 
 	Vector<String> profiles;
-	DirAccessRef d = DirAccess::open(EditorSettings::get_singleton()->get_feature_profiles_dir());
-	ERR_FAIL_COND_MSG(!d, "Cannot open directory '" + EditorSettings::get_singleton()->get_feature_profiles_dir() + "'.");
+	Ref<DirAccess> d = DirAccess::open(EditorSettings::get_singleton()->get_feature_profiles_dir());
+	ERR_FAIL_COND_MSG(d.is_null(), "Cannot open directory '" + EditorSettings::get_singleton()->get_feature_profiles_dir() + "'.");
 
 	d->list_dir_begin();
 	while (true) {
@@ -449,8 +452,8 @@ void EditorFeatureProfileManager::_profile_action(int p_action) {
 void EditorFeatureProfileManager::_erase_selected_profile() {
 	String selected = _get_selected_profile();
 	ERR_FAIL_COND(selected.is_empty());
-	DirAccessRef da = DirAccess::open(EditorSettings::get_singleton()->get_feature_profiles_dir());
-	ERR_FAIL_COND_MSG(!da, "Cannot open directory '" + EditorSettings::get_singleton()->get_feature_profiles_dir() + "'.");
+	Ref<DirAccess> da = DirAccess::open(EditorSettings::get_singleton()->get_feature_profiles_dir());
+	ERR_FAIL_COND_MSG(da.is_null(), "Cannot open directory '" + EditorSettings::get_singleton()->get_feature_profiles_dir() + "'.");
 
 	da->remove(selected + ".profile");
 	if (selected == current_profile) {
@@ -462,7 +465,7 @@ void EditorFeatureProfileManager::_erase_selected_profile() {
 
 void EditorFeatureProfileManager::_create_new_profile() {
 	String name = new_profile_name->get_text().strip_edges();
-	if (!name.is_valid_filename() || name.find(".") != -1) {
+	if (!name.is_valid_filename() || name.contains(".")) {
 		EditorNode::get_singleton()->show_warning(TTR("Profile must be a valid filename and must not contain '.'"));
 		return;
 	}
@@ -592,21 +595,36 @@ void EditorFeatureProfileManager::_class_list_item_selected() {
 	List<PropertyInfo> props;
 	ClassDB::get_property_list(class_name, &props, true);
 
-	if (props.size() > 0) {
+	bool has_editor_props = false;
+	for (const PropertyInfo &E : props) {
+		if (E.usage & PROPERTY_USAGE_EDITOR) {
+			has_editor_props = true;
+			break;
+		}
+	}
+
+	if (has_editor_props) {
 		TreeItem *properties = property_list->create_item(root);
 		properties->set_text(0, TTR("Class Properties:"));
+
+		const EditorPropertyNameProcessor::Style text_style = EditorPropertyNameProcessor::get_settings_style();
+		const EditorPropertyNameProcessor::Style tooltip_style = EditorPropertyNameProcessor::get_tooltip_style(text_style);
 
 		for (const PropertyInfo &E : props) {
 			String name = E.name;
 			if (!(E.usage & PROPERTY_USAGE_EDITOR)) {
 				continue;
 			}
+			const String text = EditorPropertyNameProcessor::get_singleton()->process_name(name, text_style);
+			const String tooltip = EditorPropertyNameProcessor::get_singleton()->process_name(name, tooltip_style);
+
 			TreeItem *property = property_list->create_item(properties);
 			property->set_cell_mode(0, TreeItem::CELL_MODE_CHECK);
 			property->set_editable(0, true);
 			property->set_selectable(0, true);
 			property->set_checked(0, !edited->is_class_property_disabled(class_name, name));
-			property->set_text(0, name.capitalize());
+			property->set_text(0, text);
+			property->set_tooltip(0, tooltip);
 			property->set_metadata(0, name);
 			String icon_type = Variant::get_type_name(E.type);
 			property->set_icon(0, EditorNode::get_singleton()->get_class_icon(icon_type));
@@ -996,8 +1014,6 @@ EditorFeatureProfileManager::EditorFeatureProfileManager() {
 	add_child(update_timer);
 	update_timer->connect("timeout", callable_mp(this, &EditorFeatureProfileManager::_emit_current_profile_changed));
 	update_timer->set_one_shot(true);
-
-	updating_features = false;
 
 	singleton = this;
 }

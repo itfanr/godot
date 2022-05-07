@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -2320,22 +2320,12 @@ Variant Animation::_cubic_interpolate(const Variant &p_pre_a, const Variant &p_a
 
 	if (vformat == ((1 << Variant::INT) | (1 << Variant::FLOAT)) || vformat == (1 << Variant::FLOAT)) {
 		//mix of real and int
+		real_t a = p_a;
+		real_t b = p_b;
+		real_t pa = p_pre_a;
+		real_t pb = p_post_b;
 
-		real_t p0 = p_pre_a;
-		real_t p1 = p_a;
-		real_t p2 = p_b;
-		real_t p3 = p_post_b;
-
-		real_t t = p_c;
-		real_t t2 = t * t;
-		real_t t3 = t2 * t;
-
-		return 0.5f *
-				((p1 * 2.0f) +
-						(-p0 + p2) * t +
-						(2.0f * p0 - 5.0f * p1 + 4 * p2 - p3) * t2 +
-						(-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
-
+		return Math::cubic_interpolate(a, b, pa, pb, p_c);
 	} else if ((vformat & (vformat - 1))) {
 		return p_a; //can't interpolate, mix of types
 	}
@@ -2423,7 +2413,7 @@ T Animation::_interpolate(const Vector<TKey<T>> &p_keys, double p_time, Interpol
 	real_t c = 0.0;
 	// prepare for all cases of interpolation
 
-	if ((loop_mode == LOOP_LINEAR || loop_mode == LOOP_PINGPONG) && p_loop_wrap) {
+	if (loop_mode == LOOP_LINEAR && p_loop_wrap) {
 		// loop
 		if (!p_backward) {
 			// no backward
@@ -2474,34 +2464,38 @@ T Animation::_interpolate(const Vector<TKey<T>> &p_keys, double p_time, Interpol
 					real_t delta = (length - p_keys[next].time) - (length - p_keys[idx].time);
 					real_t from = (length - p_time) - (length - p_keys[idx].time);
 
-					if (Math::is_zero_approx(delta))
+					if (Math::is_zero_approx(delta)) {
 						c = 0;
-					else
+					} else {
 						c = from / delta;
+					}
 				} else {
 					next = len - 1;
 					real_t delta = p_keys[idx].time + (length - p_keys[next].time);
 					real_t from = (length - p_time) - (length - p_keys[idx].time);
 
-					if (Math::is_zero_approx(delta))
+					if (Math::is_zero_approx(delta)) {
 						c = 0;
-					else
+					} else {
 						c = from / delta;
+					}
 				}
 			} else {
 				// on loop, in front of last key
 				idx = 0;
 				next = len - 1;
 				real_t endtime = p_keys[idx].time;
-				if (endtime > length) // may be keys past the end
+				if (endtime > length) { // may be keys past the end
 					endtime = length;
+				}
 				real_t delta = p_keys[next].time - endtime;
 				real_t from = p_time - endtime;
 
-				if (Math::is_zero_approx(delta))
+				if (Math::is_zero_approx(delta)) {
 					c = 0;
-				else
+				} else {
 					c = from / delta;
+				}
 			}
 		}
 	} else { // no loop
@@ -2573,11 +2567,19 @@ T Animation::_interpolate(const Vector<TKey<T>> &p_keys, double p_time, Interpol
 		case INTERPOLATION_CUBIC: {
 			int pre = idx - 1;
 			if (pre < 0) {
-				pre = 0;
+				if (loop_mode == LOOP_LINEAR && p_loop_wrap) {
+					pre = len - 1;
+				} else {
+					pre = 0;
+				}
 			}
 			int post = next + 1;
 			if (post >= len) {
-				post = next;
+				if (loop_mode == LOOP_LINEAR && p_loop_wrap) {
+					post = 0;
+				} else {
+					post = next;
+				}
 			}
 
 			return _cubic_interpolate(p_keys[pre].value, p_keys[idx].value, p_keys[next].value, p_keys[post].value, c);
@@ -2609,7 +2611,7 @@ Variant Animation::value_track_interpolate(int p_track, double p_time) const {
 
 void Animation::_value_track_get_key_indices_in_range(const ValueTrack *vt, double from_time, double to_time, List<int> *p_indices) const {
 	if (from_time != length && to_time == length) {
-		to_time = length * 1.001; //include a little more if at the end
+		to_time = length + CMP_EPSILON; //include a little more if at the end
 	}
 	int to = _find(vt->values, to_time);
 
@@ -2715,6 +2717,7 @@ void Animation::value_track_set_update_mode(int p_track, UpdateMode p_mode) {
 
 	ValueTrack *vt = static_cast<ValueTrack *>(t);
 	vt->update_mode = p_mode;
+	emit_changed();
 }
 
 Animation::UpdateMode Animation::value_track_get_update_mode(int p_track) const {
@@ -2729,7 +2732,7 @@ Animation::UpdateMode Animation::value_track_get_update_mode(int p_track) const 
 template <class T>
 void Animation::_track_get_key_indices_in_range(const Vector<T> &p_array, double from_time, double to_time, List<int> *p_indices) const {
 	if (from_time != length && to_time == length) {
-		to_time = length * 1.01; //include a little more if at the end
+		to_time = length + CMP_EPSILON; //include a little more if at the end
 	}
 
 	int to = _find(p_array, to_time);
@@ -3080,7 +3083,7 @@ void Animation::track_get_key_indices_in_range(int p_track, double p_time, doubl
 
 void Animation::_method_track_get_key_indices_in_range(const MethodTrack *mt, double from_time, double to_time, List<int> *p_indices) const {
 	if (from_time != length && to_time == length) {
-		to_time = length * 1.01; //include a little more if at the end
+		to_time = length + CMP_EPSILON; //include a little more if at the end
 	}
 
 	int to = _find(mt->methods, to_time);
@@ -3425,7 +3428,6 @@ real_t Animation::bezier_track_interpolate(int p_track, double p_time) const {
 	real_t duration = bt->values[idx + 1].time - bt->values[idx].time; // time duration between our two keyframes
 	real_t low = 0.0; // 0% of the current animation segment
 	real_t high = 1.0; // 100% of the current animation segment
-	real_t middle;
 
 	Vector2 start(0, bt->values[idx].value.value);
 	Vector2 start_out = start + bt->values[idx].value.out_handle;
@@ -3434,7 +3436,7 @@ real_t Animation::bezier_track_interpolate(int p_track, double p_time) const {
 
 	//narrow high and low as much as possible
 	for (int i = 0; i < iterations; i++) {
-		middle = (low + high) / 2;
+		real_t middle = (low + high) / 2;
 
 		Vector2 interp = _bezier_interp(middle, start, start_out, end_in, end);
 
@@ -3453,7 +3455,7 @@ real_t Animation::bezier_track_interpolate(int p_track, double p_time) const {
 	return low_pos.lerp(high_pos, c).y;
 }
 
-int Animation::audio_track_insert_key(int p_track, double p_time, const RES &p_stream, real_t p_start_offset, real_t p_end_offset) {
+int Animation::audio_track_insert_key(int p_track, double p_time, const Ref<Resource> &p_stream, real_t p_start_offset, real_t p_end_offset) {
 	ERR_FAIL_INDEX_V(p_track, tracks.size(), -1);
 	Track *t = tracks[p_track];
 	ERR_FAIL_COND_V(t->type != TYPE_AUDIO, -1);
@@ -3479,7 +3481,7 @@ int Animation::audio_track_insert_key(int p_track, double p_time, const RES &p_s
 	return key;
 }
 
-void Animation::audio_track_set_key_stream(int p_track, int p_key, const RES &p_stream) {
+void Animation::audio_track_set_key_stream(int p_track, int p_key, const Ref<Resource> &p_stream) {
 	ERR_FAIL_INDEX(p_track, tracks.size());
 	Track *t = tracks[p_track];
 	ERR_FAIL_COND(t->type != TYPE_AUDIO);
@@ -3529,14 +3531,14 @@ void Animation::audio_track_set_key_end_offset(int p_track, int p_key, real_t p_
 	emit_changed();
 }
 
-RES Animation::audio_track_get_key_stream(int p_track, int p_key) const {
-	ERR_FAIL_INDEX_V(p_track, tracks.size(), RES());
+Ref<Resource> Animation::audio_track_get_key_stream(int p_track, int p_key) const {
+	ERR_FAIL_INDEX_V(p_track, tracks.size(), Ref<Resource>());
 	const Track *t = tracks[p_track];
-	ERR_FAIL_COND_V(t->type != TYPE_AUDIO, RES());
+	ERR_FAIL_COND_V(t->type != TYPE_AUDIO, Ref<Resource>());
 
 	const AudioTrack *at = static_cast<const AudioTrack *>(t);
 
-	ERR_FAIL_INDEX_V(p_key, at->values.size(), RES());
+	ERR_FAIL_INDEX_V(p_key, at->values.size(), Ref<Resource>());
 
 	return at->values[p_key].value.stream;
 }
@@ -3826,7 +3828,7 @@ void Animation::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("compress", "page_size", "fps", "split_tolerance"), &Animation::compress, DEFVAL(8192), DEFVAL(120), DEFVAL(4.0));
 
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "length", PROPERTY_HINT_RANGE, "0.001,99999,0.001"), "set_length", "get_length");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "loop_mode"), "set_loop_mode", "get_loop_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "loop_mode", PROPERTY_HINT_ENUM, "None,Linear,Ping-Pong"), "set_loop_mode", "get_loop_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "step", PROPERTY_HINT_RANGE, "0,4096,0.001"), "set_step", "get_step");
 
 	ADD_SIGNAL(MethodInfo("tracks_changed"));
@@ -4197,7 +4199,7 @@ struct AnimationCompressionDataState {
 	};
 
 	uint32_t components = 3;
-	LocalVector<uint8_t> data; //commited packets
+	LocalVector<uint8_t> data; // Committed packets.
 	struct PacketData {
 		int32_t data[3] = { 0, 0, 0 };
 		uint32_t frame = 0;
@@ -4344,7 +4346,7 @@ struct AnimationCompressionDataState {
 		if (temp_packets.size() == 0) {
 			return; //nohing to do
 		}
-#define DEBUG_PACKET_PUSH
+//#define DEBUG_PACKET_PUSH
 #ifdef DEBUG_PACKET_PUSH
 #ifndef _MSC_VER
 #warning Debugging packet push, disable this code in production to gain a bit more import performance.
@@ -4375,7 +4377,7 @@ struct AnimationCompressionDataState {
 			header_bytes += 2;
 		}
 
-		while (header_bytes % 4 != 0) {
+		while (header_bytes < 8 && header_bytes % 4 != 0) { // First cond needed to silence wrong GCC warning.
 			header[header_bytes++] = 0;
 		}
 
@@ -4576,7 +4578,7 @@ void Animation::compress(uint32_t p_page_size, uint32_t p_fps, float p_split_tol
 				}
 			}
 			for (int j = 0; j < 3; j++) {
-				//cant have zero
+				// Can't have zero.
 				if (aabb.size[j] < CMP_EPSILON) {
 					aabb.size[j] = CMP_EPSILON;
 				}
@@ -4596,7 +4598,7 @@ void Animation::compress(uint32_t p_page_size, uint32_t p_fps, float p_split_tol
 				}
 			}
 			for (int j = 0; j < 3; j++) {
-				//cant have zero
+				// Can't have zero.
 				if (aabb.size[j] < CMP_EPSILON) {
 					aabb.size[j] = CMP_EPSILON;
 				}

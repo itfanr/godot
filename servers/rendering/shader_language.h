@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -362,7 +362,6 @@ public:
 			TYPE_CONTROL_FLOW,
 			TYPE_MEMBER,
 			TYPE_ARRAY,
-			TYPE_ARRAY_DECLARATION,
 			TYPE_ARRAY_CONSTRUCT,
 			TYPE_STRUCT,
 		};
@@ -387,7 +386,7 @@ public:
 		return node;
 	}
 
-	Node *nodes;
+	Node *nodes = nullptr;
 
 	struct OperatorNode : public Node {
 		DataType return_cache = TYPE_VOID;
@@ -428,7 +427,10 @@ public:
 
 		struct Declaration {
 			StringName name;
-			Node *initializer;
+			uint32_t size = 0U;
+			Node *size_expression = nullptr;
+			Vector<Node *> initializer;
+			bool single_expression = false;
 		};
 		Vector<Declaration> declarations;
 
@@ -449,8 +451,8 @@ public:
 		int array_size = 0;
 		bool is_local = false;
 
-		virtual DataType get_datatype() const override { return datatype_cache; }
-		virtual String get_datatype_name() const override { return String(struct_name); }
+		virtual DataType get_datatype() const override { return call_expression ? call_expression->get_datatype() : datatype_cache; }
+		virtual String get_datatype_name() const override { return call_expression ? call_expression->get_datatype_name() : String(struct_name); }
 		virtual int get_array_size() const override { return (index_expression || call_expression) ? 0 : array_size; }
 		virtual bool is_indexed() const override { return index_expression != nullptr; }
 
@@ -471,27 +473,6 @@ public:
 				Node(TYPE_ARRAY_CONSTRUCT) {}
 	};
 
-	struct ArrayDeclarationNode : public Node {
-		DataPrecision precision = PRECISION_DEFAULT;
-		DataType datatype = TYPE_VOID;
-		String struct_name;
-		bool is_const = false;
-		Node *size_expression = nullptr;
-
-		struct Declaration {
-			StringName name;
-			uint32_t size;
-			Vector<Node *> initializer;
-			bool single_expression;
-		};
-		Vector<Declaration> declarations;
-
-		virtual DataType get_datatype() const override { return datatype; }
-
-		ArrayDeclarationNode() :
-				Node(TYPE_ARRAY_DECLARATION) {}
-	};
-
 	struct ConstantNode : public Node {
 		DataType datatype = TYPE_VOID;
 		String struct_name = "";
@@ -505,7 +486,7 @@ public:
 		};
 
 		Vector<Value> values;
-		Vector<ArrayDeclarationNode::Declaration> array_declarations;
+		Vector<VariableDeclarationNode::Declaration> array_declarations;
 
 		virtual DataType get_datatype() const override { return datatype; }
 		virtual String get_datatype_name() const override { return struct_name; }
@@ -523,7 +504,9 @@ public:
 
 		enum BlockType {
 			BLOCK_TYPE_STANDART,
-			BLOCK_TYPE_FOR,
+			BLOCK_TYPE_FOR_INIT,
+			BLOCK_TYPE_FOR_CONDITION,
+			BLOCK_TYPE_FOR_EXPRESSION,
 			BLOCK_TYPE_SWITCH,
 			BLOCK_TYPE_CASE,
 			BLOCK_TYPE_DEFAULT,
@@ -545,6 +528,7 @@ public:
 		Map<StringName, Variable> variables;
 		List<Node *> statements;
 		bool single_statement = false;
+		bool use_comma_between_statements = false;
 
 		BlockNode() :
 				Node(TYPE_BLOCK) {}
@@ -574,8 +558,8 @@ public:
 		Node *call_expression = nullptr;
 		bool has_swizzling_duplicates = false;
 
-		virtual DataType get_datatype() const override { return datatype; }
-		virtual String get_datatype_name() const override { return String(struct_name); }
+		virtual DataType get_datatype() const override { return call_expression ? call_expression->get_datatype() : datatype; }
+		virtual String get_datatype_name() const override { return call_expression ? call_expression->get_datatype_name() : String(struct_name); }
 		virtual int get_array_size() const override { return (index_expression || call_expression) ? 0 : array_size; }
 		virtual bool is_indexed() const override { return index_expression != nullptr || call_expression != nullptr; }
 
@@ -631,20 +615,20 @@ public:
 			DataType type;
 			StringName type_str;
 			DataPrecision precision;
-			ConstantNode *initializer;
+			ConstantNode *initializer = nullptr;
 			int array_size;
 		};
 
 		struct Function {
 			StringName name;
-			FunctionNode *function;
+			FunctionNode *function = nullptr;
 			Set<StringName> uses_function;
 			bool callable;
 		};
 
 		struct Struct {
 			StringName name;
-			StructNode *shader_struct;
+			StructNode *shader_struct = nullptr;
 		};
 
 		struct Varying {
@@ -731,7 +715,7 @@ public:
 		bool is_op;
 		union {
 			Operator op;
-			Node *node;
+			Node *node = nullptr;
 		};
 	};
 
@@ -742,6 +726,7 @@ public:
 
 	enum CompletionType {
 		COMPLETION_NONE,
+		COMPLETION_SHADER_TYPE,
 		COMPLETION_RENDER_MODE,
 		COMPLETION_MAIN_FUNCTION,
 		COMPLETION_IDENTIFIER,
@@ -771,6 +756,7 @@ public:
 	static bool is_token_interpolation(TokenType p_type);
 	static DataInterpolation get_token_interpolation(TokenType p_type);
 	static bool is_token_precision(TokenType p_type);
+	static bool is_token_arg_qual(TokenType p_type);
 	static DataPrecision get_token_precision(TokenType p_type);
 	static String get_precision_name(DataPrecision p_type);
 	static String get_datatype_name(DataType p_type);
@@ -787,7 +773,7 @@ public:
 	static bool is_sampler_type(DataType p_type);
 	static Variant constant_value_to_variant(const Vector<ShaderLanguage::ConstantNode::Value> &p_value, DataType p_type, int p_array_size, ShaderLanguage::ShaderNode::Uniform::Hint p_hint = ShaderLanguage::ShaderNode::Uniform::HINT_NONE);
 	static PropertyInfo uniform_to_property_info(const ShaderNode::Uniform &p_uniform);
-	static uint32_t get_type_size(DataType p_type);
+	static uint32_t get_datatype_size(DataType p_type);
 
 	static void get_keyword_list(List<String> *r_keywords);
 	static bool is_control_flow_keyword(String p_keyword);
@@ -885,15 +871,18 @@ private:
 	struct KeyWord {
 		TokenType token;
 		const char *text;
+		uint32_t flags;
+		const Vector<String> excluded_shader_types;
+		const Vector<String> functions;
 	};
 
 	static const KeyWord keyword_list[];
 
-	GlobalVariableGetTypeFunc global_var_get_type_func;
+	GlobalVariableGetTypeFunc global_var_get_type_func = nullptr;
 
-	bool error_set;
+	bool error_set = false;
 	String error_str;
-	int error_line;
+	int error_line = 0;
 
 #ifdef DEBUG_ENABLED
 	struct Usage {
@@ -917,34 +906,30 @@ private:
 	List<ShaderWarning> warnings;
 
 	bool check_warnings = false;
-	uint32_t warning_flags;
+	uint32_t warning_flags = 0;
 
-	void _add_line_warning(ShaderWarning::Code p_code, const StringName &p_subject = "") {
-		warnings.push_back(ShaderWarning(p_code, tk_line, p_subject));
+	void _add_line_warning(ShaderWarning::Code p_code, const StringName &p_subject = "", const Vector<Variant> &p_extra_args = Vector<Variant>()) {
+		warnings.push_back(ShaderWarning(p_code, tk_line, p_subject, p_extra_args));
 	}
-	void _add_warning(ShaderWarning::Code p_code, int p_line, const StringName &p_subject = "") {
-		warnings.push_back(ShaderWarning(p_code, p_line, p_subject));
+	void _add_global_warning(ShaderWarning::Code p_code, const StringName &p_subject = "", const Vector<Variant> &p_extra_args = Vector<Variant>()) {
+		warnings.push_back(ShaderWarning(p_code, -1, p_subject, p_extra_args));
+	}
+	void _add_warning(ShaderWarning::Code p_code, int p_line, const StringName &p_subject = "", const Vector<Variant> &p_extra_args = Vector<Variant>()) {
+		warnings.push_back(ShaderWarning(p_code, p_line, p_subject, p_extra_args));
 	}
 	void _check_warning_accums();
 #endif // DEBUG_ENABLED
 
 	String code;
-	int char_idx;
-	int tk_line;
+	int char_idx = 0;
+	int tk_line = 0;
 
+	StringName shader_type_identifier;
 	StringName current_function;
 	bool last_const = false;
 	StringName last_name;
 
 	VaryingFunctionNames varying_function_names;
-
-	struct VaryingUsage {
-		ShaderNode::Varying *var;
-		int line;
-	};
-	List<VaryingUsage> unknown_varying_usages;
-
-	bool _check_varying_usages(int *r_error_line, String *r_error_message) const;
 
 	TkPos _get_tkpos() {
 		TkPos tkp;
@@ -968,12 +953,33 @@ private:
 		error_str = p_str;
 	}
 
+	void _set_expected_error(const String &p_what) {
+		_set_error(vformat(RTR("Expected a '%s'."), p_what));
+	}
+
+	void _set_expected_error(const String &p_first, const String p_second) {
+		_set_error(vformat(RTR("Expected a '%s' or '%s'."), p_first, p_second));
+	}
+
+	void _set_expected_after_error(const String &p_what, const String &p_after) {
+		_set_error(vformat(RTR("Expected a '%s' after '%s'."), p_what, p_after));
+	}
+
+	void _set_redefinition_error(const String &p_what) {
+		_set_error(vformat(RTR("Redefinition of '%s'."), p_what));
+	}
+
+	void _set_parsing_error() {
+		_set_error("Parser bug.");
+	}
+
 	static const char *token_names[TK_MAX];
 
 	Token _make_token(TokenType p_type, const StringName &p_text = StringName());
 	Token _get_token();
+	bool _lookup_next(Token &r_tk);
 
-	ShaderNode *shader;
+	ShaderNode *shader = nullptr;
 
 	enum IdentifierType {
 		IDENTIFIER_FUNCTION,
@@ -1020,14 +1026,18 @@ private:
 	};
 
 	CompletionType completion_type;
-	int completion_line;
-	BlockNode *completion_block;
+	int completion_line = 0;
+	BlockNode *completion_block = nullptr;
 	DataType completion_base;
-	bool completion_base_array;
+	bool completion_base_array = false;
 	SubClassTag completion_class;
 	StringName completion_function;
 	StringName completion_struct;
-	int completion_argument;
+	int completion_argument = 0;
+
+#ifdef DEBUG_ENABLED
+	uint32_t keyword_completion_context;
+#endif // DEBUG_ENABLED
 
 	const Map<StringName, FunctionInfo> *stages = nullptr;
 
@@ -1038,6 +1048,7 @@ private:
 
 	static bool is_const_suffix_lut_initialized;
 
+	Error _validate_precision(DataType p_type, DataPrecision p_precision);
 	Error _validate_datatype(DataType p_type);
 	bool _compare_datatypes(DataType p_datatype_a, String p_datatype_name_a, int p_array_size_a, DataType p_datatype_b, String p_datatype_name_b, int p_array_size_b);
 	bool _compare_datatypes_in_nodes(Node *a, Node *b);
@@ -1047,14 +1058,10 @@ private:
 	bool _propagate_function_call_sampler_uniform_settings(StringName p_name, int p_argument, TextureFilter p_filter, TextureRepeat p_repeat);
 	bool _propagate_function_call_sampler_builtin_reference(StringName p_name, int p_argument, const StringName &p_builtin);
 	bool _validate_varying_assign(ShaderNode::Varying &p_varying, String *r_message);
-	bool _validate_varying_using(ShaderNode::Varying &p_varying, String *r_message);
 	bool _check_node_constness(const Node *p_node) const;
 
-	Node *_parse_array_size(BlockNode *p_block, const FunctionInfo &p_function_info, int &r_array_size);
-	Error _parse_global_array_size(int &r_array_size, const FunctionInfo &p_function_info);
-	Error _parse_local_array_size(BlockNode *p_block, const FunctionInfo &p_function_info, Node *&r_size_expression, int &r_array_size, bool &r_is_unknown_size);
-
 	Node *_parse_expression(BlockNode *p_block, const FunctionInfo &p_function_info);
+	Error _parse_array_size(BlockNode *p_block, const FunctionInfo &p_function_info, bool p_forbid_unknown_size, Node **r_size_expression, int *r_array_size, bool *r_unknown_size);
 	Node *_parse_array_constructor(BlockNode *p_block, const FunctionInfo &p_function_info);
 	Node *_parse_array_constructor(BlockNode *p_block, const FunctionInfo &p_function_info, DataType p_type, const StringName &p_struct_name, int p_array_size);
 	ShaderLanguage::Node *_reduce_expression(BlockNode *p_block, ShaderLanguage::Node *p_node);
@@ -1095,7 +1102,7 @@ public:
 	};
 
 	Error compile(const String &p_code, const ShaderCompileInfo &p_info);
-	Error complete(const String &p_code, const ShaderCompileInfo &p_info, List<ScriptCodeCompletionOption> *r_options, String &r_call_hint);
+	Error complete(const String &p_code, const ShaderCompileInfo &p_info, List<ScriptLanguage::CodeCompletionOption> *r_options, String &r_call_hint);
 
 	String get_error_text();
 	int get_error_line();

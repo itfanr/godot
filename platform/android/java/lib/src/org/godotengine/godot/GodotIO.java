@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -38,6 +38,7 @@ import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.res.AssetManager;
 import android.graphics.Point;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -51,6 +52,7 @@ import android.view.DisplayCutout;
 import android.view.WindowInsets;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Locale;
 
 // Wrapper for native library
@@ -222,11 +224,23 @@ public class GodotIO {
 	}
 
 	public int getScreenDPI() {
-		DisplayMetrics metrics = activity.getApplicationContext().getResources().getDisplayMetrics();
+		DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
 		return (int)(metrics.density * 160f);
 	}
 
-	public int[] screenGetUsableRect() {
+	public float getScaledDensity() {
+		return activity.getResources().getDisplayMetrics().scaledDensity;
+	}
+
+	public double getScreenRefreshRate(double fallback) {
+		Display display = activity.getWindowManager().getDefaultDisplay();
+		if (display != null) {
+			return display.getRefreshRate();
+		}
+		return fallback;
+	}
+
+	public int[] getDisplaySafeArea() {
 		DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
 		Display display = activity.getWindowManager().getDefaultDisplay();
 		Point size = new Point();
@@ -244,6 +258,25 @@ public class GodotIO {
 				result[2] -= insetLeft + cutout.getSafeInsetRight();
 				result[3] -= insetTop + cutout.getSafeInsetBottom();
 			}
+		}
+		return result;
+	}
+
+	public int[] getDisplayCutouts() {
+		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P)
+			return new int[0];
+		DisplayCutout cutout = activity.getWindow().getDecorView().getRootWindowInsets().getDisplayCutout();
+		if (cutout == null)
+			return new int[0];
+		List<Rect> rects = cutout.getBoundingRects();
+		int cutouts = rects.size();
+		int[] result = new int[cutouts * 4];
+		int index = 0;
+		for (Rect rect : rects) {
+			result[index++] = rect.left;
+			result[index++] = rect.top;
+			result[index++] = rect.width();
+			result[index++] = rect.height();
 		}
 		return result;
 	}

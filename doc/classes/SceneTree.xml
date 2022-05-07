@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="SceneTree" inherits="MainLoop" version="4.0">
+<class name="SceneTree" inherits="MainLoop" version="4.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Manages the game loop via a hierarchy of nodes.
 	</brief_description>
@@ -14,7 +14,7 @@
 	</tutorials>
 	<methods>
 		<method name="call_group" qualifiers="vararg">
-			<return type="Variant" />
+			<return type="void" />
 			<argument index="0" name="group" type="StringName" />
 			<argument index="1" name="method" type="StringName" />
 			<description>
@@ -24,7 +24,7 @@
 			</description>
 		</method>
 		<method name="call_group_flags" qualifiers="vararg">
-			<return type="Variant" />
+			<return type="void" />
 			<argument index="0" name="flags" type="int" />
 			<argument index="1" name="group" type="StringName" />
 			<argument index="2" name="method" type="StringName" />
@@ -91,12 +91,20 @@
 			<return type="Node" />
 			<argument index="0" name="group" type="StringName" />
 			<description>
+				Returns the first node in the specified group, or [code]null[/code] if the group is empty or does not exist.
 			</description>
 		</method>
 		<method name="get_frame" qualifiers="const">
 			<return type="int" />
 			<description>
 				Returns the current frame number, i.e. the total frame count since the application started.
+			</description>
+		</method>
+		<method name="get_multiplayer" qualifiers="const">
+			<return type="MultiplayerAPI" />
+			<argument index="0" name="for_path" type="NodePath" default="NodePath(&quot;&quot;)" />
+			<description>
+				Return the [MultiplayerAPI] configured for the given path, or the default one if [code]for_path[/code] is empty.
 			</description>
 		</method>
 		<method name="get_node_count" qualifiers="const">
@@ -193,6 +201,14 @@
 				Sets the given [code]property[/code] to [code]value[/code] on all members of the given group, respecting the given [enum GroupCallFlags].
 			</description>
 		</method>
+		<method name="set_multiplayer">
+			<return type="void" />
+			<argument index="0" name="multiplayer" type="MultiplayerAPI" />
+			<argument index="1" name="root_path" type="NodePath" default="NodePath(&quot;&quot;)" />
+			<description>
+				Sets a custom [MultiplayerAPI] with the given [code]root_path[/code] (controlling also the relative subpaths), or override the default one if [code]root_path[/code] is empty.
+			</description>
+		</method>
 		<method name="set_quit_on_go_back">
 			<return type="void" />
 			<argument index="0" name="enabled" type="bool" />
@@ -215,9 +231,6 @@
 		<member name="edited_scene_root" type="Node" setter="set_edited_scene_root" getter="get_edited_scene_root">
 			The root of the edited scene.
 		</member>
-		<member name="multiplayer" type="MultiplayerAPI" setter="set_multiplayer" getter="get_multiplayer">
-			The default [MultiplayerAPI] instance for this [SceneTree].
-		</member>
 		<member name="multiplayer_poll" type="bool" setter="set_multiplayer_poll_enabled" getter="is_multiplayer_poll_enabled" default="true">
 			If [code]true[/code] (default value), enables automatic polling of the [MultiplayerAPI] for this SceneTree during [signal process_frame].
 			If [code]false[/code], you need to manually call [method MultiplayerAPI.poll] to process network packets and deliver RPCs. This allows running RPCs in a different loop (e.g. physics, thread, specific time step) and for manual [Mutex] protection when accessing the [MultiplayerAPI] from threads.
@@ -232,13 +245,6 @@
 		</member>
 	</members>
 	<signals>
-		<signal name="files_dropped">
-			<argument index="0" name="files" type="PackedStringArray" />
-			<argument index="1" name="screen" type="int" />
-			<description>
-				Emitted when files are dragged from the OS file manager and dropped in the game window. The arguments are a list of file paths and the identifier of the screen where the drag originated.
-			</description>
-		</signal>
 		<signal name="node_added">
 			<argument index="0" name="node" type="Node" />
 			<description>

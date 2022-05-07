@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -45,17 +45,17 @@ class NavigationAgent2D : public Node {
 	uint32_t navigable_layers = 1;
 
 	real_t target_desired_distance = 1.0;
-	real_t radius;
-	real_t neighbor_dist;
-	int max_neighbors;
-	real_t time_horizon;
-	real_t max_speed;
+	real_t radius = 0.0;
+	real_t neighbor_dist = 0.0;
+	int max_neighbors = 0;
+	real_t time_horizon = 0.0;
+	real_t max_speed = 0.0;
 
 	real_t path_max_distance = 3.0;
 
 	Vector2 target_location;
 	Vector<Vector2> navigation_path;
-	int nav_path_index;
+	int nav_path_index = 0;
 	bool velocity_submitted = false;
 	Vector2 prev_safe_velocity;
 	/// The submitted target velocity
@@ -63,7 +63,7 @@ class NavigationAgent2D : public Node {
 	bool target_reached = false;
 	bool navigation_finished = true;
 	// No initialized on purpose
-	uint32_t update_frame_id;
+	uint32_t update_frame_id = 0;
 
 protected:
 	static void _bind_methods();
@@ -139,6 +139,7 @@ public:
 
 private:
 	void update_navigation();
+	void _request_repath();
 	void _check_distance_to_target();
 };
 

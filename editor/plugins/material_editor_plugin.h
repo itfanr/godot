@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,16 +31,14 @@
 #ifndef MATERIAL_EDITOR_PLUGIN_H
 #define MATERIAL_EDITOR_PLUGIN_H
 
-#include "editor/property_editor.h"
-#include "scene/resources/primitive_meshes.h"
-
-#include "editor/editor_node.h"
 #include "editor/editor_plugin.h"
+#include "editor/property_editor.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/light_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
 #include "scene/gui/color_rect.h"
 #include "scene/resources/material.h"
+#include "scene/resources/primitive_meshes.h"
 
 class SubViewportContainer;
 
@@ -92,6 +90,8 @@ public:
 	virtual bool can_handle(Object *p_object) override;
 	virtual void parse_begin(Object *p_object) override;
 
+	void _undo_redo_inspector_callback(Object *p_undo_redo, Object *p_edited, String p_property, Variant p_new_value);
+
 	EditorInspectorPluginMaterial();
 };
 
@@ -101,7 +101,7 @@ class MaterialEditorPlugin : public EditorPlugin {
 public:
 	virtual String get_name() const override { return "Material"; }
 
-	MaterialEditorPlugin(EditorNode *p_node);
+	MaterialEditorPlugin();
 };
 
 class StandardMaterial3DConversionPlugin : public EditorResourceConversionPlugin {

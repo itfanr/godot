@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -350,7 +350,7 @@ void DocTools::generate(bool p_basic_types) {
 		List<PropertyInfo> properties;
 		List<PropertyInfo> own_properties;
 		if (name == "ProjectSettings") {
-			//special case for project settings, so settings can be documented
+			// Special case for project settings, so settings can be documented.
 			ProjectSettings::get_singleton()->get_property_list(&properties);
 			own_properties = properties;
 		} else {
@@ -358,9 +358,12 @@ void DocTools::generate(bool p_basic_types) {
 			ClassDB::get_property_list(name, &own_properties, true);
 		}
 
+		properties.sort();
+		own_properties.sort();
+
 		List<PropertyInfo>::Element *EO = own_properties.front();
 		for (const PropertyInfo &E : properties) {
-			bool inherited = EO == nullptr;
+			bool inherited = true;
 			if (EO && EO->get() == E) {
 				inherited = false;
 				EO = EO->next();
@@ -410,7 +413,7 @@ void DocTools::generate(bool p_basic_types) {
 			//used to track uninitialized values using valgrind
 			//print_line("getting default value for " + String(name) + "." + String(E.name));
 			if (default_value_valid && default_value.get_type() != Variant::OBJECT) {
-				prop.default_value = default_value.get_construct_string().replace("\n", "");
+				prop.default_value = default_value.get_construct_string().replace("\n", " ");
 			}
 
 			StringName setter = ClassDB::get_property_setter(name, E.name);
@@ -522,7 +525,7 @@ void DocTools::generate(bool p_basic_types) {
 					int darg_idx = i - (E.arguments.size() - E.default_arguments.size());
 					if (darg_idx >= 0) {
 						Variant default_arg = E.default_arguments[darg_idx];
-						argument.default_value = default_arg.get_construct_string();
+						argument.default_value = default_arg.get_construct_string().replace("\n", " ");
 					}
 
 					method.arguments.push_back(argument);
@@ -531,11 +534,11 @@ void DocTools::generate(bool p_basic_types) {
 
 			Vector<Error> errs = ClassDB::get_method_error_return_values(name, E.name);
 			if (errs.size()) {
-				if (errs.find(OK) == -1) {
+				if (!errs.has(OK)) {
 					errs.insert(0, OK);
 				}
 				for (int i = 0; i < errs.size(); i++) {
-					if (method.errors_returned.find(errs[i]) == -1) {
+					if (!method.errors_returned.has(errs[i])) {
 						method.errors_returned.push_back(errs[i]);
 					}
 				}
@@ -585,7 +588,7 @@ void DocTools::generate(bool p_basic_types) {
 				tid.name = E;
 				tid.type = "Color";
 				tid.data_type = "color";
-				tid.default_value = Variant(Theme::get_default()->get_color(E, cname)).get_construct_string();
+				tid.default_value = Variant(Theme::get_default()->get_color(E, cname)).get_construct_string().replace("\n", " ");
 				c.theme_properties.push_back(tid);
 			}
 
@@ -682,6 +685,11 @@ void DocTools::generate(bool p_basic_types) {
 
 		for (int j = 0; j < Variant::OP_AND; j++) { // Showing above 'and' is pretty confusing and there are a lot of variations.
 			for (int k = 0; k < Variant::VARIANT_MAX; k++) {
+				// Prevent generating for comparison with null.
+				if (Variant::Type(k) == Variant::NIL && (Variant::Operator(j) == Variant::OP_EQUAL || Variant::Operator(j) == Variant::OP_NOT_EQUAL)) {
+					continue;
+				}
+
 				Variant::Type rt = Variant::get_operator_return_type(Variant::Operator(j), Variant::Type(i), Variant::Type(k));
 				if (rt != Variant::NIL) { // Has operator.
 					// Skip String % operator as it's registered separately for each Variant arg type,
@@ -757,7 +765,7 @@ void DocTools::generate(bool p_basic_types) {
 				int darg_idx = mi.default_arguments.size() - mi.arguments.size() + j;
 				if (darg_idx >= 0) {
 					Variant default_arg = mi.default_arguments[darg_idx];
-					ad.default_value = default_arg.get_construct_string();
+					ad.default_value = default_arg.get_construct_string().replace("\n", " ");
 				}
 
 				method.arguments.push_back(ad);
@@ -801,7 +809,7 @@ void DocTools::generate(bool p_basic_types) {
 			DocData::PropertyDoc property;
 			property.name = pi.name;
 			property.type = Variant::get_type_name(pi.type);
-			property.default_value = v.get(pi.name).get_construct_string();
+			property.default_value = v.get(pi.name).get_construct_string().replace("\n", " ");
 
 			c.properties.push_back(property);
 		}
@@ -813,7 +821,7 @@ void DocTools::generate(bool p_basic_types) {
 			DocData::ConstantDoc constant;
 			constant.name = E;
 			Variant value = Variant::get_constant_value(Variant::Type(i), E);
-			constant.value = value.get_type() == Variant::INT ? itos(value) : value.get_construct_string();
+			constant.value = value.get_type() == Variant::INT ? itos(value) : value.get_construct_string().replace("\n", " ");
 			constant.is_value_valid = true;
 			c.constants.push_back(constant);
 		}
@@ -930,7 +938,7 @@ void DocTools::generate(bool p_basic_types) {
 					int darg_idx = j - (mi.arguments.size() - mi.default_arguments.size());
 					if (darg_idx >= 0) {
 						Variant default_arg = mi.default_arguments[darg_idx];
-						ad.default_value = default_arg.get_construct_string();
+						ad.default_value = default_arg.get_construct_string().replace("\n", " ");
 					}
 
 					md.arguments.push_back(ad);
@@ -1027,8 +1035,8 @@ static Error _parse_methods(Ref<XMLParser> &parser, Vector<DocData::MethodDoc> &
 
 Error DocTools::load_classes(const String &p_dir) {
 	Error err;
-	DirAccessRef da = DirAccess::open(p_dir, &err);
-	if (!da) {
+	Ref<DirAccess> da = DirAccess::open(p_dir, &err);
+	if (da.is_null()) {
 		return err;
 	}
 
@@ -1055,8 +1063,8 @@ Error DocTools::load_classes(const String &p_dir) {
 
 Error DocTools::erase_classes(const String &p_dir) {
 	Error err;
-	DirAccessRef da = DirAccess::open(p_dir, &err);
-	if (!da) {
+	Ref<DirAccess> da = DirAccess::open(p_dir, &err);
+	if (da.is_null()) {
 		return err;
 	}
 
@@ -1265,7 +1273,7 @@ Error DocTools::_load(Ref<XMLParser> parser) {
 	return OK;
 }
 
-static void _write_string(FileAccess *f, int p_tablevel, const String &p_string) {
+static void _write_string(Ref<FileAccess> f, int p_tablevel, const String &p_string) {
 	if (p_string.is_empty()) {
 		return;
 	}
@@ -1276,7 +1284,7 @@ static void _write_string(FileAccess *f, int p_tablevel, const String &p_string)
 	f->store_string(tab + p_string + "\n");
 }
 
-static void _write_method_doc(FileAccess *f, const String &p_name, Vector<DocData::MethodDoc> &p_method_docs) {
+static void _write_method_doc(Ref<FileAccess> f, const String &p_name, Vector<DocData::MethodDoc> &p_method_docs) {
 	if (!p_method_docs.is_empty()) {
 		p_method_docs.sort();
 		_write_string(f, 1, "<" + p_name + "s>");
@@ -1342,7 +1350,7 @@ Error DocTools::save_classes(const String &p_default_path, const Map<String, Str
 
 		Error err;
 		String save_file = save_path.plus_file(c.name + ".xml");
-		FileAccessRef f = FileAccess::open(save_file, FileAccess::WRITE, &err);
+		Ref<FileAccess> f = FileAccess::open(save_file, FileAccess::WRITE, &err);
 
 		ERR_CONTINUE_MSG(err != OK, "Can't write doc file: " + save_file + ".");
 
@@ -1353,7 +1361,12 @@ Error DocTools::save_classes(const String &p_default_path, const Map<String, Str
 			header += " inherits=\"" + c.inherits + "\"";
 		}
 		header += String(" version=\"") + VERSION_BRANCH + "\"";
-		header += ">";
+		// Reference the XML schema so editors can provide error checking.
+		// Modules are nested deep, so change the path to reference the same schema everywhere.
+		const String schema_path = save_path.find("modules/") != -1 ? "../../../doc/class.xsd" : "../class.xsd";
+		header += vformat(
+				R"( xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="%s">)",
+				schema_path);
 		_write_string(f, 0, header);
 
 		_write_string(f, 1, "<brief_description>");
@@ -1367,7 +1380,7 @@ Error DocTools::save_classes(const String &p_default_path, const Map<String, Str
 		_write_string(f, 1, "<tutorials>");
 		for (int i = 0; i < c.tutorials.size(); i++) {
 			DocData::TutorialDoc tutorial = c.tutorials.get(i);
-			String title_attribute = (!tutorial.title.is_empty()) ? " title=\"" + tutorial.title.xml_escape() + "\"" : "";
+			String title_attribute = (!tutorial.title.is_empty()) ? " title=\"" + _translate_doc_string(tutorial.title).xml_escape() + "\"" : "";
 			_write_string(f, 2, "<link" + title_attribute + ">" + tutorial.link.xml_escape() + "</link>");
 		}
 		_write_string(f, 1, "</tutorials>");
@@ -1460,7 +1473,8 @@ Error DocTools::save_classes(const String &p_default_path, const Map<String, Str
 Error DocTools::load_compressed(const uint8_t *p_data, int p_compressed_size, int p_uncompressed_size) {
 	Vector<uint8_t> data;
 	data.resize(p_uncompressed_size);
-	Compression::decompress(data.ptrw(), p_uncompressed_size, p_data, p_compressed_size, Compression::MODE_DEFLATE);
+	int ret = Compression::decompress(data.ptrw(), p_uncompressed_size, p_data, p_compressed_size, Compression::MODE_DEFLATE);
+	ERR_FAIL_COND_V_MSG(ret == -1, ERR_FILE_CORRUPT, "Compressed file is corrupt.");
 	class_list.clear();
 
 	Ref<XMLParser> parser = memnew(XMLParser);

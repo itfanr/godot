@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -43,8 +43,8 @@ class ConfigFile : public RefCounted {
 
 	PackedStringArray _get_sections() const;
 	PackedStringArray _get_section_keys(const String &p_section) const;
-	Error _internal_load(const String &p_path, FileAccess *f);
-	Error _internal_save(FileAccess *file);
+	Error _internal_load(const String &p_path, Ref<FileAccess> f);
+	Error _internal_save(Ref<FileAccess> file);
 
 	Error _parse(const String &p_path, VariantParser::Stream *p_stream);
 

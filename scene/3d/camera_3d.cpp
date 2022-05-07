@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -82,12 +82,6 @@ void Camera3D::_update_camera() {
 
 	RenderingServer::get_singleton()->camera_set_transform(camera, get_camera_transform());
 
-	// here goes listener stuff
-	/*
-	if (viewport_ptr && is_inside_scene() && is_current())
-		get_viewport()->_camera_3d_transform_changed_notify();
-	*/
-
 	if (get_tree()->is_node_being_edited(this) || !is_current()) {
 		return;
 	}
@@ -108,14 +102,15 @@ void Camera3D::_notification(int p_what) {
 			if (current || first_camera) {
 				viewport->_camera_3d_set(this);
 			}
-
 		} break;
+
 		case NOTIFICATION_TRANSFORM_CHANGED: {
 			_request_camera_update();
 			if (doppler_tracking != DOPPLER_TRACKING_DISABLED) {
 				velocity_tracker->update_position(get_global_transform().origin);
 			}
 		} break;
+
 		case NOTIFICATION_EXIT_WORLD: {
 			if (!get_tree()->is_node_being_edited(this)) {
 				if (is_current()) {
@@ -131,13 +126,14 @@ void Camera3D::_notification(int p_what) {
 				viewport->_camera_3d_remove(this);
 				viewport = nullptr;
 			}
-
 		} break;
+
 		case NOTIFICATION_BECAME_CURRENT: {
 			if (viewport) {
 				viewport->find_world_3d()->_register_camera(this);
 			}
 		} break;
+
 		case NOTIFICATION_LOST_CURRENT: {
 			if (viewport) {
 				viewport->find_world_3d()->_remove_camera(this);
@@ -148,8 +144,8 @@ void Camera3D::_notification(int p_what) {
 
 Transform3D Camera3D::get_camera_transform() const {
 	Transform3D tr = get_global_transform().orthonormalized();
-	tr.origin += tr.basis.get_axis(1) * v_offset;
-	tr.origin += tr.basis.get_axis(0) * h_offset;
+	tr.origin += tr.basis.get_column(1) * v_offset;
+	tr.origin += tr.basis.get_column(0) * h_offset;
 	return tr;
 }
 
@@ -311,7 +307,7 @@ Vector3 Camera3D::project_ray_origin(const Point2 &p_pos) const {
 
 bool Camera3D::is_position_behind(const Vector3 &p_pos) const {
 	Transform3D t = get_global_transform();
-	Vector3 eyedir = -t.basis.get_axis(2).normalized();
+	Vector3 eyedir = -t.basis.get_column(2).normalized();
 	return eyedir.dot(p_pos - t.origin) < near;
 }
 
@@ -331,11 +327,13 @@ Vector<Vector3> Camera3D::get_near_plane_points() const {
 	Vector3 endpoints[8];
 	cm.get_endpoints(Transform3D(), endpoints);
 
-	Vector<Vector3> points;
-	points.push_back(Vector3());
-	for (int i = 0; i < 4; i++) {
-		points.push_back(endpoints[i + 4]);
-	}
+	Vector<Vector3> points = {
+		Vector3(),
+		endpoints[4],
+		endpoints[5],
+		endpoints[6],
+		endpoints[7]
+	};
 	return points;
 }
 
@@ -477,9 +475,9 @@ void Camera3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_near", "near"), &Camera3D::set_near);
 	ClassDB::bind_method(D_METHOD("get_projection"), &Camera3D::get_projection);
 	ClassDB::bind_method(D_METHOD("set_projection", "mode"), &Camera3D::set_projection);
-	ClassDB::bind_method(D_METHOD("set_h_offset", "ofs"), &Camera3D::set_h_offset);
+	ClassDB::bind_method(D_METHOD("set_h_offset", "offset"), &Camera3D::set_h_offset);
 	ClassDB::bind_method(D_METHOD("get_h_offset"), &Camera3D::get_h_offset);
-	ClassDB::bind_method(D_METHOD("set_v_offset", "ofs"), &Camera3D::set_v_offset);
+	ClassDB::bind_method(D_METHOD("set_v_offset", "offset"), &Camera3D::set_v_offset);
 	ClassDB::bind_method(D_METHOD("get_v_offset"), &Camera3D::get_v_offset);
 	ClassDB::bind_method(D_METHOD("set_cull_mask", "mask"), &Camera3D::set_cull_mask);
 	ClassDB::bind_method(D_METHOD("get_cull_mask"), &Camera3D::get_cull_mask);
@@ -511,7 +509,7 @@ void Camera3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "projection", PROPERTY_HINT_ENUM, "Perspective,Orthogonal,Frustum"), "set_projection", "get_projection");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "current"), "set_current", "is_current");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fov", PROPERTY_HINT_RANGE, "1,179,0.1,degrees"), "set_fov", "get_fov");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "size", PROPERTY_HINT_RANGE, "0.1,16384,0.01"), "set_size", "get_size");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "size", PROPERTY_HINT_RANGE, "0.001,16384,0.001"), "set_size", "get_size");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "frustum_offset"), "set_frustum_offset", "get_frustum_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "near", PROPERTY_HINT_RANGE, "0.001,10,0.001,or_greater,exp"), "set_near", "get_near");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "far", PROPERTY_HINT_RANGE, "0.01,4000,0.01,or_greater,exp"), "set_far", "get_far");
@@ -559,7 +557,7 @@ void Camera3D::set_fov(real_t p_fov) {
 }
 
 void Camera3D::set_size(real_t p_size) {
-	ERR_FAIL_COND(p_size < 0.1 || p_size > 16384);
+	ERR_FAIL_COND(p_size < 0.001 || p_size > 16384);
 	size = p_size;
 	_update_camera_mode();
 }

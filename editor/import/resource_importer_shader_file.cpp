@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -82,7 +82,7 @@ static String _include_function(const String &p_path, void *userpointer) {
 		include = base_path->plus_file(include);
 	}
 
-	FileAccessRef file_inc = FileAccess::open(include, FileAccess::READ, &err);
+	Ref<FileAccess> file_inc = FileAccess::open(include, FileAccess::READ, &err);
 	if (err != OK) {
 		return String();
 	}
@@ -93,7 +93,7 @@ Error ResourceImporterShaderFile::import(const String &p_source_file, const Stri
 	/* STEP 1, Read shader code */
 
 	Error err;
-	FileAccessRef file = FileAccess::open(p_source_file, FileAccess::READ, &err);
+	Ref<FileAccess> file = FileAccess::open(p_source_file, FileAccess::READ, &err);
 	ERR_FAIL_COND_V(err != OK, ERR_CANT_OPEN);
 	ERR_FAIL_COND_V(!file.operator->(), ERR_CANT_OPEN);
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,7 +39,7 @@
 #define MAX_BIAS_ROTATION (Math_PI / 8)
 
 void GodotBodyPair3D::_contact_added_callback(const Vector3 &p_point_A, int p_index_A, const Vector3 &p_point_B, int p_index_B, void *p_userdata) {
-	GodotBodyPair3D *pair = (GodotBodyPair3D *)p_userdata;
+	GodotBodyPair3D *pair = static_cast<GodotBodyPair3D *>(p_userdata);
 	pair->contact_added_callback(p_point_A, p_index_A, p_point_B, p_index_B);
 }
 
@@ -562,7 +562,7 @@ GodotBodyPair3D::~GodotBodyPair3D() {
 }
 
 void GodotBodySoftBodyPair3D::_contact_added_callback(const Vector3 &p_point_A, int p_index_A, const Vector3 &p_point_B, int p_index_B, void *p_userdata) {
-	GodotBodySoftBodyPair3D *pair = (GodotBodySoftBodyPair3D *)p_userdata;
+	GodotBodySoftBodyPair3D *pair = static_cast<GodotBodySoftBodyPair3D *>(p_userdata);
 	pair->contact_added_callback(p_point_A, p_index_A, p_point_B, p_index_B);
 }
 

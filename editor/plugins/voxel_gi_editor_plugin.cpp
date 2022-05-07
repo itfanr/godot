@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -29,6 +29,9 @@
 /*************************************************************************/
 
 #include "voxel_gi_editor_plugin.h"
+
+#include "editor/editor_file_dialog.h"
+#include "editor/editor_node.h"
 
 void VoxelGIEditorPlugin::_bake() {
 	if (voxel_gi) {
@@ -62,41 +65,43 @@ bool VoxelGIEditorPlugin::handles(Object *p_object) const {
 }
 
 void VoxelGIEditorPlugin::_notification(int p_what) {
-	if (p_what == NOTIFICATION_PROCESS) {
-		if (!voxel_gi) {
-			return;
-		}
+	switch (p_what) {
+		case NOTIFICATION_PROCESS: {
+			if (!voxel_gi) {
+				return;
+			}
 
-		// Set information tooltip on the Bake button. This information is useful
-		// to optimize performance (video RAM size) and reduce light leaking (individual cell size).
+			// Set information tooltip on the Bake button. This information is useful
+			// to optimize performance (video RAM size) and reduce light leaking (individual cell size).
 
-		const Vector3i size = voxel_gi->get_estimated_cell_size();
+			const Vector3i size = voxel_gi->get_estimated_cell_size();
 
-		const Vector3 extents = voxel_gi->get_extents();
+			const Vector3 extents = voxel_gi->get_extents();
 
-		const int data_size = 4;
-		const double size_mb = size.x * size.y * size.z * data_size / (1024.0 * 1024.0);
-		// Add a qualitative measurement to help the user assess whether a VoxelGI node is using a lot of VRAM.
-		String size_quality;
-		if (size_mb < 16.0) {
-			size_quality = TTR("Low");
-		} else if (size_mb < 64.0) {
-			size_quality = TTR("Moderate");
-		} else {
-			size_quality = TTR("High");
-		}
+			const int data_size = 4;
+			const double size_mb = size.x * size.y * size.z * data_size / (1024.0 * 1024.0);
+			// Add a qualitative measurement to help the user assess whether a VoxelGI node is using a lot of VRAM.
+			String size_quality;
+			if (size_mb < 16.0) {
+				size_quality = TTR("Low");
+			} else if (size_mb < 64.0) {
+				size_quality = TTR("Moderate");
+			} else {
+				size_quality = TTR("High");
+			}
 
-		String text;
-		text += vformat(TTR("Subdivisions: %s"), vformat(String::utf8("%d × %d × %d"), size.x, size.y, size.z)) + "\n";
-		text += vformat(TTR("Cell size: %s"), vformat(String::utf8("%.3f × %.3f × %.3f"), extents.x / size.x, extents.y / size.y, extents.z / size.z)) + "\n";
-		text += vformat(TTR("Video RAM size: %s MB (%s)"), String::num(size_mb, 2), size_quality);
+			String text;
+			text += vformat(TTR("Subdivisions: %s"), vformat(String::utf8("%d × %d × %d"), size.x, size.y, size.z)) + "\n";
+			text += vformat(TTR("Cell size: %s"), vformat(String::utf8("%.3f × %.3f × %.3f"), extents.x / size.x, extents.y / size.y, extents.z / size.z)) + "\n";
+			text += vformat(TTR("Video RAM size: %s MB (%s)"), String::num(size_mb, 2), size_quality);
 
-		// Only update the tooltip when needed to avoid constant redrawing.
-		if (bake->get_tooltip(Point2()) == text) {
-			return;
-		}
+			// Only update the tooltip when needed to avoid constant redrawing.
+			if (bake->get_tooltip(Point2()) == text) {
+				return;
+			}
 
-		bake->set_tooltip(text);
+			bake->set_tooltip(text);
+		} break;
 	}
 }
 
@@ -115,7 +120,7 @@ EditorProgress *VoxelGIEditorPlugin::tmp_progress = nullptr;
 void VoxelGIEditorPlugin::bake_func_begin(int p_steps) {
 	ERR_FAIL_COND(tmp_progress != nullptr);
 
-	tmp_progress = memnew(EditorProgress("bake_gi", TTR("Bake GI Probe"), p_steps));
+	tmp_progress = memnew(EditorProgress("bake_gi", TTR("Bake VoxelGI"), p_steps));
 }
 
 void VoxelGIEditorPlugin::bake_func_step(int p_step, const String &p_description) {
@@ -141,15 +146,14 @@ void VoxelGIEditorPlugin::_voxel_gi_save_path_and_bake(const String &p_path) {
 void VoxelGIEditorPlugin::_bind_methods() {
 }
 
-VoxelGIEditorPlugin::VoxelGIEditorPlugin(EditorNode *p_node) {
-	editor = p_node;
+VoxelGIEditorPlugin::VoxelGIEditorPlugin() {
 	bake_hb = memnew(HBoxContainer);
 	bake_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	bake_hb->hide();
 	bake = memnew(Button);
 	bake->set_flat(true);
-	bake->set_icon(editor->get_gui_base()->get_theme_icon(SNAME("Bake"), SNAME("EditorIcons")));
-	bake->set_text(TTR("Bake GI Probe"));
+	bake->set_icon(EditorNode::get_singleton()->get_gui_base()->get_theme_icon(SNAME("Bake"), SNAME("EditorIcons")));
+	bake->set_text(TTR("Bake VoxelGI"));
 	bake->connect("pressed", callable_mp(this, &VoxelGIEditorPlugin::_bake));
 	bake_hb->add_child(bake);
 

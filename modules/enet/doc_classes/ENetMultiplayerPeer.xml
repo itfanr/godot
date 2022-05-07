@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="ENetMultiplayerPeer" inherits="MultiplayerPeer" version="4.0">
+<class name="ENetMultiplayerPeer" inherits="MultiplayerPeer" version="4.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
 		A MultiplayerPeer implementation using the [url=http://enet.bespin.org/index.html]ENet[/url] library.
 	</brief_description>
@@ -62,7 +62,7 @@
 			<return type="ENetPacketPeer" />
 			<argument index="0" name="id" type="int" />
 			<description>
-				Return the [ENetPacketPeer] associated to the given [code]id[/code].
+				Returns the [ENetPacketPeer] associated to the given [code]id[/code].
 			</description>
 		</method>
 		<method name="set_bind_ip">

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -211,7 +211,7 @@ void ImmediateMesh::surface_end() {
 				value |= CLAMP(int((t.normal.y * 0.5 + 0.5) * 1023.0), 0, 1023) << 10;
 				value |= CLAMP(int((t.normal.z * 0.5 + 0.5) * 1023.0), 0, 1023) << 20;
 				if (t.d > 0) {
-					value |= 3 << 30;
+					value |= 3UL << 30;
 				}
 
 				*tangent = value;
@@ -382,7 +382,7 @@ AABB ImmediateMesh::get_aabb() const {
 		if (i == 0) {
 			aabb = surfaces[i].aabb;
 		} else {
-			aabb.merge(surfaces[i].aabb);
+			aabb = aabb.merge(surfaces[i].aabb);
 		}
 	}
 	return aabb;

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -920,7 +920,7 @@ RID GodotPhysicsServer3D::soft_body_create() {
 	return rid;
 }
 
-void GodotPhysicsServer3D::soft_body_update_rendering_server(RID p_body, RenderingServerHandler *p_rendering_server_handler) {
+void GodotPhysicsServer3D::soft_body_update_rendering_server(RID p_body, PhysicsServer3DRenderingServerHandler *p_rendering_server_handler) {
 	GodotSoftBody3D *soft_body = soft_body_owner.get_or_null(p_body);
 	ERR_FAIL_COND(!soft_body);
 
@@ -1355,7 +1355,7 @@ int GodotPhysicsServer3D::joint_get_solver_priority(RID p_joint) const {
 	return joint->get_priority();
 }
 
-void GodotPhysicsServer3D::joint_disable_collisions_between_bodies(RID p_joint, const bool p_disable) {
+void GodotPhysicsServer3D::joint_disable_collisions_between_bodies(RID p_joint, bool p_disable) {
 	GodotJoint3D *joint = joint_owner.get_or_null(p_joint);
 	ERR_FAIL_COND(!joint);
 
@@ -1540,14 +1540,6 @@ void GodotPhysicsServer3D::free(RID p_rid) {
 	} else if (body_owner.owns(p_rid)) {
 		GodotBody3D *body = body_owner.get_or_null(p_rid);
 
-		/*
-		if (body->get_state_query())
-			_clear_query(body->get_state_query());
-
-		if (body->get_direct_state_query())
-			_clear_query(body->get_direct_state_query());
-		*/
-
 		body->set_space(nullptr);
 
 		while (body->get_shape_count()) {
@@ -1566,11 +1558,6 @@ void GodotPhysicsServer3D::free(RID p_rid) {
 	} else if (area_owner.owns(p_rid)) {
 		GodotArea3D *area = area_owner.get_or_null(p_rid);
 
-		/*
-		if (area->get_monitor_query())
-			_clear_query(area->get_monitor_query());
-		*/
-
 		area->set_space(nullptr);
 
 		while (area->get_shape_count()) {
@@ -1583,7 +1570,7 @@ void GodotPhysicsServer3D::free(RID p_rid) {
 		GodotSpace3D *space = space_owner.get_or_null(p_rid);
 
 		while (space->get_objects().size()) {
-			GodotCollisionObject3D *co = (GodotCollisionObject3D *)space->get_objects().front()->get();
+			GodotCollisionObject3D *co = static_cast<GodotCollisionObject3D *>(space->get_objects().front()->get());
 			co->set_space(nullptr);
 		}
 
@@ -1625,7 +1612,7 @@ void GodotPhysicsServer3D::step(real_t p_step) {
 	active_objects = 0;
 	collision_pairs = 0;
 	for (Set<const GodotSpace3D *>::Element *E = active_spaces.front(); E; E = E->next()) {
-		stepper->step((GodotSpace3D *)E->get(), p_step);
+		stepper->step(const_cast<GodotSpace3D *>(E->get()), p_step);
 		island_count += E->get()->get_island_count();
 		active_objects += E->get()->get_active_objects();
 		collision_pairs += E->get()->get_collision_pairs();
@@ -1649,7 +1636,7 @@ void GodotPhysicsServer3D::flush_queries() {
 	uint64_t time_beg = OS::get_singleton()->get_ticks_usec();
 
 	for (Set<const GodotSpace3D *>::Element *E = active_spaces.front(); E; E = E->next()) {
-		GodotSpace3D *space = (GodotSpace3D *)E->get();
+		GodotSpace3D *space = const_cast<GodotSpace3D *>(E->get());
 		space->call_queries();
 	}
 
@@ -1722,7 +1709,7 @@ void GodotPhysicsServer3D::_update_shapes() {
 }
 
 void GodotPhysicsServer3D::_shape_col_cbk(const Vector3 &p_point_A, int p_index_A, const Vector3 &p_point_B, int p_index_B, void *p_userdata) {
-	CollCbkData *cbk = (CollCbkData *)p_userdata;
+	CollCbkData *cbk = static_cast<CollCbkData *>(p_userdata);
 
 	if (cbk->max == 0) {
 		return;

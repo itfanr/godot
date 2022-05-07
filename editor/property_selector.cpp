@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -33,7 +33,7 @@
 #include "core/os/keyboard.h"
 #include "editor/doc_tools.h"
 #include "editor/editor_node.h"
-#include "editor_scale.h"
+#include "editor/editor_scale.h"
 
 void PropertySelector::_text_changed(const String &p_newtext) {
 	_update_search();
@@ -185,7 +185,7 @@ void PropertySelector::_update_search() {
 				continue;
 			}
 
-			if (type_filter.size() && type_filter.find(E.type) == -1) {
+			if (type_filter.size() && !type_filter.has(E.type)) {
 				continue;
 			}
 
@@ -214,10 +214,13 @@ void PropertySelector::_update_search() {
 			Variant::construct(type, v, nullptr, 0, ce);
 			v.get_method_list(&methods);
 		} else {
-			Object *obj = ObjectDB::get_instance(script);
-			if (Object::cast_to<Script>(obj)) {
+			Ref<Script> script_ref = Object::cast_to<Script>(ObjectDB::get_instance(script));
+			if (script_ref.is_valid()) {
 				methods.push_back(MethodInfo("*Script Methods"));
-				Object::cast_to<Script>(obj)->get_script_method_list(&methods);
+				if (script_ref->is_built_in()) {
+					script_ref->reload(true);
+				}
+				script_ref->get_script_method_list(&methods);
 			}
 
 			StringName base = base_type;
@@ -276,7 +279,7 @@ void PropertySelector::_update_search() {
 			TreeItem *item = search_options->create_item(category ? category : root);
 
 			String desc;
-			if (mi.name.find(":") != -1) {
+			if (mi.name.contains(":")) {
 				desc = mi.name.get_slice(":", 1) + " ";
 				mi.name = mi.name.get_slice(":", 0);
 			} else if (mi.return_val.type != Variant::NIL) {
@@ -296,7 +299,7 @@ void PropertySelector::_update_search() {
 
 				if (mi.arguments[i].type == Variant::NIL) {
 					desc += ": Variant";
-				} else if (mi.arguments[i].name.find(":") != -1) {
+				} else if (mi.arguments[i].name.contains(":")) {
 					desc += vformat(": %s", mi.arguments[i].name.get_slice(":", 1));
 					mi.arguments[i].name = mi.arguments[i].name.get_slice(":", 0);
 				} else {
@@ -418,10 +421,14 @@ void PropertySelector::_hide_requested() {
 }
 
 void PropertySelector::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE) {
-		connect("confirmed", callable_mp(this, &PropertySelector::_confirmed));
-	} else if (p_what == NOTIFICATION_EXIT_TREE) {
-		disconnect("confirmed", callable_mp(this, &PropertySelector::_confirmed));
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			connect("confirmed", callable_mp(this, &PropertySelector::_confirmed));
+		} break;
+
+		case NOTIFICATION_EXIT_TREE: {
+			disconnect("confirmed", callable_mp(this, &PropertySelector::_confirmed));
+		} break;
 	}
 }
 
@@ -582,7 +589,6 @@ PropertySelector::PropertySelector() {
 	search_options->connect("cell_selected", callable_mp(this, &PropertySelector::_item_selected));
 	search_options->set_hide_root(true);
 	search_options->set_hide_folding(true);
-	virtuals_only = false;
 
 	help_bit = memnew(EditorHelpBit);
 	vbc->add_margin_child(TTR("Description:"), help_bit);

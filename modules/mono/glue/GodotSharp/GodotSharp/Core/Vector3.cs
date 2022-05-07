@@ -96,6 +96,16 @@ namespace Godot
             }
         }
 
+        /// <summary>
+        /// Helper method for deconstruction into a tuple.
+        /// </summary>
+        public void Deconstruct(out real_t x, out real_t y, out real_t z)
+        {
+            x = this.x;
+            y = this.y;
+            z = this.z;
+        }
+
         internal void Normalize()
         {
             real_t lengthsq = LengthSquared();
@@ -195,19 +205,11 @@ namespace Godot
         /// <returns>The interpolated vector.</returns>
         public Vector3 CubicInterpolate(Vector3 b, Vector3 preA, Vector3 postB, real_t weight)
         {
-            Vector3 p0 = preA;
-            Vector3 p1 = this;
-            Vector3 p2 = b;
-            Vector3 p3 = postB;
-
-            real_t t = weight;
-            real_t t2 = t * t;
-            real_t t3 = t2 * t;
-
-            return 0.5f * (
-                (p1 * 2.0f) + ((-p0 + p2) * t) +
-                (((2.0f * p0) - (5.0f * p1) + (4f * p2) - p3) * t2) +
-                ((-p0 + (3.0f * p1) - (3.0f * p2) + p3) * t3)
+            return new Vector3
+            (
+                Mathf.CubicInterpolate(x, b.x, preA.x, postB.x, weight),
+                Mathf.CubicInterpolate(y, b.y, preA.y, postB.y, weight),
+                Mathf.CubicInterpolate(z, b.z, preA.z, postB.z, weight)
             );
         }
 
@@ -486,11 +488,11 @@ namespace Godot
         }
 
         /// <summary>
-        /// Rotates this vector around a given <paramref name="axis"/> vector by <paramref name="phi"/> radians.
+        /// Rotates this vector around a given <paramref name="axis"/> vector by <paramref name="angle"/> (in radians).
         /// The <paramref name="axis"/> vector must be a normalized vector.
         /// </summary>
         /// <param name="axis">The vector to rotate around. Must be normalized.</param>
-        /// <param name="phi">The angle to rotate by, in radians.</param>
+        /// <param name="angle">The angle to rotate by, in radians.</param>
         /// <returns>The rotated vector.</returns>
         public Vector3 Rotated(Vector3 axis, real_t phi)
         {
@@ -549,25 +551,25 @@ namespace Godot
         /// Returns the result of the spherical linear interpolation between
         /// this vector and <paramref name="to"/> by amount <paramref name="weight"/>.
         ///
-        /// Note: Both vectors must be normalized.
+        /// This method also handles interpolating the lengths if the input vectors
+        /// have different lengths. For the special case of one or both input vectors
+        /// having zero length, this method behaves like <see cref="Lerp"/>.
         /// </summary>
-        /// <param name="to">The destination vector for interpolation. Must be normalized.</param>
+        /// <param name="to">The destination vector for interpolation.</param>
         /// <param name="weight">A value on the range of 0.0 to 1.0, representing the amount of interpolation.</param>
         /// <returns>The resulting vector of the interpolation.</returns>
         public Vector3 Slerp(Vector3 to, real_t weight)
         {
-#if DEBUG
-            if (!IsNormalized())
-            {
-                throw new InvalidOperationException("Vector3.Slerp: From vector is not normalized.");
+            real_t startLengthSquared = LengthSquared();
+            real_t endLengthSquared = to.LengthSquared();
+            if (startLengthSquared == 0.0 || endLengthSquared == 0.0) {
+              // Zero length vectors have no angle, so the best we can do is either lerp or throw an error.
+              return Lerp(to, weight);
             }
-            if (!to.IsNormalized())
-            {
-                throw new InvalidOperationException($"Vector3.Slerp: `{nameof(to)}` is not normalized.");
-            }
-#endif
-            real_t theta = AngleTo(to);
-            return Rotated(Cross(to), theta * weight);
+            real_t startLength = Mathf.Sqrt(startLengthSquared);
+            real_t resultLength = Mathf.Lerp(startLength, Mathf.Sqrt(endLengthSquared), weight);
+            real_t angle = AngleTo(to);
+            return Rotated(Cross(to).Normalized(), angle * weight) * (resultLength / startLength);
         }
 
         /// <summary>

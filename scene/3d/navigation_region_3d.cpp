@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -73,6 +73,10 @@ uint32_t NavigationRegion3D::get_layers() const {
 	return NavigationServer3D::get_singleton()->region_get_layers(region);
 }
 
+RID NavigationRegion3D::get_region_rid() const {
+	return region;
+}
+
 /////////////////////////////
 
 void NavigationRegion3D::_notification(int p_what) {
@@ -93,12 +97,12 @@ void NavigationRegion3D::_notification(int p_what) {
 				add_child(dm);
 				debug_view = dm;
 			}
-
 		} break;
+
 		case NOTIFICATION_TRANSFORM_CHANGED: {
 			NavigationServer3D::get_singleton()->region_set_transform(region, get_global_transform());
-
 		} break;
+
 		case NOTIFICATION_EXIT_TREE: {
 			NavigationServer3D::get_singleton()->region_set_map(region, RID());
 
@@ -161,13 +165,17 @@ void _bake_navigation_mesh(void *p_user_data) {
 	}
 }
 
-void NavigationRegion3D::bake_navigation_mesh() {
+void NavigationRegion3D::bake_navigation_mesh(bool p_on_thread) {
 	ERR_FAIL_COND_MSG(bake_thread.is_started(), "Unable to start another bake request. The navigation mesh bake thread is already baking a navigation mesh.");
 
 	BakeThreadsArgs *args = memnew(BakeThreadsArgs);
 	args->nav_region = this;
 
-	bake_thread.start(_bake_navigation_mesh, args);
+	if (p_on_thread) {
+		bake_thread.start(_bake_navigation_mesh, args);
+	} else {
+		_bake_navigation_mesh(args);
+	}
 }
 
 void NavigationRegion3D::_bake_finished(Ref<NavigationMesh> p_nav_mesh) {
@@ -181,7 +189,7 @@ TypedArray<String> NavigationRegion3D::get_configuration_warnings() const {
 
 	if (is_visible_in_tree() && is_inside_tree()) {
 		if (!navmesh.is_valid()) {
-			warnings.push_back(TTR("A NavigationMesh resource must be set or created for this node to work."));
+			warnings.push_back(RTR("A NavigationMesh resource must be set or created for this node to work."));
 		}
 	}
 
@@ -198,7 +206,9 @@ void NavigationRegion3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_layers", "layers"), &NavigationRegion3D::set_layers);
 	ClassDB::bind_method(D_METHOD("get_layers"), &NavigationRegion3D::get_layers);
 
-	ClassDB::bind_method(D_METHOD("bake_navigation_mesh"), &NavigationRegion3D::bake_navigation_mesh);
+	ClassDB::bind_method(D_METHOD("get_region_rid"), &NavigationRegion3D::get_region_rid);
+
+	ClassDB::bind_method(D_METHOD("bake_navigation_mesh", "on_thread"), &NavigationRegion3D::bake_navigation_mesh, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("_bake_finished", "nav_mesh"), &NavigationRegion3D::_bake_finished);
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "navmesh", PROPERTY_HINT_RESOURCE_TYPE, "NavigationMesh"), "set_navigation_mesh", "get_navigation_mesh");

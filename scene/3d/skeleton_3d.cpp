@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,7 +32,6 @@
 
 #include "core/object/message_queue.h"
 #include "core/variant/type_info.h"
-#include "editor/plugins/skeleton_3d_editor_plugin.h"
 #include "scene/3d/physics_body_3d.h"
 #include "scene/resources/skeleton_modification_3d.h"
 #include "scene/resources/surface_tool.h"
@@ -318,11 +317,9 @@ void Skeleton3D::_notification(int p_what) {
 					rs->skeleton_bone_set_transform(skeleton, i, bonesptr[bone_index].pose_global * skin->get_bind_pose(i));
 				}
 			}
-
 #ifdef TOOLS_ENABLED
 			emit_signal(SceneStringNames::get_singleton()->pose_updated);
 #endif // TOOLS_ENABLED
-
 		} break;
 
 #ifndef _3D_DISABLED
@@ -344,19 +341,14 @@ void Skeleton3D::_notification(int p_what) {
 			if (modification_stack.is_valid()) {
 				execute_modifications(get_physics_process_delta_time(), SkeletonModificationStack3D::EXECUTION_MODE::execution_mode_physics_process);
 			}
-
 		} break;
-#endif // _3D_DISABLED
 
-#ifndef _3D_DISABLED
 		case NOTIFICATION_INTERNAL_PROCESS: {
 			if (modification_stack.is_valid()) {
 				execute_modifications(get_process_delta_time(), SkeletonModificationStack3D::EXECUTION_MODE::execution_mode_process);
 			}
 		} break;
-#endif // _3D_DISABLED
 
-#ifndef _3D_DISABLED
 		case NOTIFICATION_READY: {
 			set_physics_process_internal(true);
 			set_process_internal(true);
@@ -506,7 +498,7 @@ int Skeleton3D::get_bone_axis_forward_enum(int p_bone) {
 // Skeleton creation api
 
 void Skeleton3D::add_bone(const String &p_name) {
-	ERR_FAIL_COND(p_name.is_empty() || p_name.find(":") != -1 || p_name.find("/") != -1);
+	ERR_FAIL_COND(p_name.is_empty() || p_name.contains(":") || p_name.contains("/"));
 
 	for (int i = 0; i < bones.size(); i++) {
 		ERR_FAIL_COND(bones[i].name == p_name);
@@ -517,6 +509,7 @@ void Skeleton3D::add_bone(const String &p_name) {
 	bones.push_back(b);
 	process_order_dirty = true;
 	version++;
+	rest_dirty = true;
 	_make_dirty();
 	update_gizmos();
 }
@@ -575,6 +568,7 @@ void Skeleton3D::set_bone_parent(int p_bone, int p_parent) {
 
 	bones.write[p_bone].parent = p_parent;
 	process_order_dirty = true;
+	rest_dirty = true;
 	_make_dirty();
 }
 
@@ -593,6 +587,7 @@ void Skeleton3D::unparent_bone_and_rest(int p_bone) {
 	bones.write[p_bone].parent = -1;
 	process_order_dirty = true;
 
+	rest_dirty = true;
 	_make_dirty();
 }
 
@@ -615,6 +610,7 @@ void Skeleton3D::set_bone_children(int p_bone, Vector<int> p_children) {
 	bones.write[p_bone].child_bones = p_children;
 
 	process_order_dirty = true;
+	rest_dirty = true;
 	_make_dirty();
 }
 
@@ -624,6 +620,7 @@ void Skeleton3D::add_bone_child(int p_bone, int p_child) {
 	bones.write[p_bone].child_bones.push_back(p_child);
 
 	process_order_dirty = true;
+	rest_dirty = true;
 	_make_dirty();
 }
 
@@ -639,6 +636,7 @@ void Skeleton3D::remove_bone_child(int p_bone, int p_child) {
 	}
 
 	process_order_dirty = true;
+	rest_dirty = true;
 	_make_dirty();
 }
 
@@ -651,6 +649,7 @@ void Skeleton3D::set_bone_rest(int p_bone, const Transform3D &p_rest) {
 	ERR_FAIL_INDEX(p_bone, bone_size);
 
 	bones.write[p_bone].rest = p_rest;
+	rest_dirty = true;
 	_make_dirty();
 }
 Transform3D Skeleton3D::get_bone_rest(int p_bone) const {
@@ -658,6 +657,14 @@ Transform3D Skeleton3D::get_bone_rest(int p_bone) const {
 	ERR_FAIL_INDEX_V(p_bone, bone_size, Transform3D());
 
 	return bones[p_bone].rest;
+}
+Transform3D Skeleton3D::get_bone_global_rest(int p_bone) const {
+	const int bone_size = bones.size();
+	ERR_FAIL_INDEX_V(p_bone, bone_size, Transform3D());
+	if (rest_dirty) {
+		const_cast<Skeleton3D *>(this)->notification(NOTIFICATION_UPDATE_SKELETON);
+	}
+	return bones[p_bone].global_rest;
 }
 
 void Skeleton3D::set_bone_enabled(int p_bone, bool p_enabled) {
@@ -1066,6 +1073,9 @@ void Skeleton3D::force_update_bone_children_transforms(int p_bone_idx) {
 				b.pose_global_no_override = b.pose_global;
 			}
 		}
+		if (rest_dirty) {
+			b.global_rest = b.parent >= 0 ? bonesptr[b.parent].global_rest * b.rest : b.rest;
+		}
 
 		if (b.local_pose_override_amount >= CMP_EPSILON) {
 			Transform3D override_local_pose;
@@ -1096,6 +1106,7 @@ void Skeleton3D::force_update_bone_children_transforms(int p_bone_idx) {
 
 		emit_signal(SceneStringNames::get_singleton()->bone_pose_changed, current_bone_idx);
 	}
+	rest_dirty = false;
 }
 
 // Helper functions
@@ -1214,6 +1225,7 @@ void Skeleton3D::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_bone_rest", "bone_idx"), &Skeleton3D::get_bone_rest);
 	ClassDB::bind_method(D_METHOD("set_bone_rest", "bone_idx", "rest"), &Skeleton3D::set_bone_rest);
+	ClassDB::bind_method(D_METHOD("get_bone_global_rest", "bone_idx"), &Skeleton3D::get_bone_global_rest);
 
 	ClassDB::bind_method(D_METHOD("create_skin_from_rest_transforms"), &Skeleton3D::create_skin_from_rest_transforms);
 	ClassDB::bind_method(D_METHOD("register_skin", "skin"), &Skeleton3D::register_skin);

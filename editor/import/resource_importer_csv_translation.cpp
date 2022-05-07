@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -88,9 +88,8 @@ Error ResourceImporterCSVTranslation::import(const String &p_source_file, const 
 			break;
 	}
 
-	FileAccessRef f = FileAccess::open(p_source_file, FileAccess::READ);
-
-	ERR_FAIL_COND_V_MSG(!f, ERR_INVALID_PARAMETER, "Cannot open file from path '" + p_source_file + "'.");
+	Ref<FileAccess> f = FileAccess::open(p_source_file, FileAccess::READ);
+	ERR_FAIL_COND_V_MSG(f.is_null(), ERR_INVALID_PARAMETER, "Cannot open file from path '" + p_source_file + "'.");
 
 	Vector<String> line = f->get_csv_line(delimiter);
 	ERR_FAIL_COND_V(line.size() <= 1, ERR_PARSE_ERROR);
@@ -99,8 +98,7 @@ Error ResourceImporterCSVTranslation::import(const String &p_source_file, const 
 	Vector<Ref<Translation>> translations;
 
 	for (int i = 1; i < line.size(); i++) {
-		String locale = line[i];
-		ERR_FAIL_COND_V_MSG(!TranslationServer::is_locale_valid(locale), ERR_PARSE_ERROR, "Error importing CSV translation: '" + locale + "' is not a valid locale.");
+		String locale = TranslationServer::get_singleton()->standardize_locale(line[i]);
 
 		locales.push_back(locale);
 		Ref<Translation> translation;

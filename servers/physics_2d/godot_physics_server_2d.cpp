@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -144,7 +144,7 @@ real_t GodotPhysicsServer2D::shape_get_custom_solver_bias(RID p_shape) const {
 }
 
 void GodotPhysicsServer2D::_shape_col_cbk(const Vector2 &p_point_A, const Vector2 &p_point_B, void *p_userdata) {
-	CollCbkData *cbk = (CollCbkData *)p_userdata;
+	CollCbkData *cbk = static_cast<CollCbkData *>(p_userdata);
 
 	if (cbk->max == 0) {
 		return;
@@ -1188,14 +1188,6 @@ void GodotPhysicsServer2D::free(RID p_rid) {
 	} else if (body_owner.owns(p_rid)) {
 		GodotBody2D *body = body_owner.get_or_null(p_rid);
 
-		/*
-		if (body->get_state_query())
-			_clear_query(body->get_state_query());
-
-		if (body->get_direct_state_query())
-			_clear_query(body->get_direct_state_query());
-		*/
-
 		body_set_space(p_rid, RID());
 
 		while (body->get_shape_count()) {
@@ -1207,11 +1199,6 @@ void GodotPhysicsServer2D::free(RID p_rid) {
 
 	} else if (area_owner.owns(p_rid)) {
 		GodotArea2D *area = area_owner.get_or_null(p_rid);
-
-		/*
-		if (area->get_monitor_query())
-			_clear_query(area->get_monitor_query());
-		*/
 
 		area->set_space(nullptr);
 
@@ -1225,7 +1212,7 @@ void GodotPhysicsServer2D::free(RID p_rid) {
 		GodotSpace2D *space = space_owner.get_or_null(p_rid);
 
 		while (space->get_objects().size()) {
-			GodotCollisionObject2D *co = (GodotCollisionObject2D *)space->get_objects().front()->get();
+			GodotCollisionObject2D *co = static_cast<GodotCollisionObject2D *>(space->get_objects().front()->get());
 			co->set_space(nullptr);
 		}
 
@@ -1264,7 +1251,7 @@ void GodotPhysicsServer2D::step(real_t p_step) {
 	active_objects = 0;
 	collision_pairs = 0;
 	for (Set<const GodotSpace2D *>::Element *E = active_spaces.front(); E; E = E->next()) {
-		stepper->step((GodotSpace2D *)E->get(), p_step);
+		stepper->step(const_cast<GodotSpace2D *>(E->get()), p_step);
 		island_count += E->get()->get_island_count();
 		active_objects += E->get()->get_active_objects();
 		collision_pairs += E->get()->get_collision_pairs();
@@ -1285,7 +1272,7 @@ void GodotPhysicsServer2D::flush_queries() {
 	uint64_t time_beg = OS::get_singleton()->get_ticks_usec();
 
 	for (Set<const GodotSpace2D *>::Element *E = active_spaces.front(); E; E = E->next()) {
-		GodotSpace2D *space = (GodotSpace2D *)E->get();
+		GodotSpace2D *space = const_cast<GodotSpace2D *>(E->get());
 		space->call_queries();
 	}
 

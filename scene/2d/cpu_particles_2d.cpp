@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -152,11 +152,14 @@ void CPUParticles2D::_update_mesh_texture() {
 	} else {
 		tex_size = Size2(1, 1);
 	}
-	Vector<Vector2> vertices;
-	vertices.push_back(-tex_size * 0.5);
-	vertices.push_back(-tex_size * 0.5 + Vector2(tex_size.x, 0));
-	vertices.push_back(-tex_size * 0.5 + tex_size);
-	vertices.push_back(-tex_size * 0.5 + Vector2(0, tex_size.y));
+
+	Vector<Vector2> vertices = {
+		-tex_size * 0.5,
+		-tex_size * 0.5 + Vector2(tex_size.x, 0),
+		-tex_size * 0.5 + tex_size,
+		-tex_size * 0.5 + Vector2(0, tex_size.y)
+	};
+
 	Vector<Vector2> uvs;
 	AtlasTexture *atlas_texure = Object::cast_to<AtlasTexture>(*texture);
 	if (atlas_texure && atlas_texure->get_atlas().is_valid()) {
@@ -172,18 +175,15 @@ void CPUParticles2D::_update_mesh_texture() {
 		uvs.push_back(Vector2(1, 1));
 		uvs.push_back(Vector2(0, 1));
 	}
-	Vector<Color> colors;
-	colors.push_back(Color(1, 1, 1, 1));
-	colors.push_back(Color(1, 1, 1, 1));
-	colors.push_back(Color(1, 1, 1, 1));
-	colors.push_back(Color(1, 1, 1, 1));
-	Vector<int> indices;
-	indices.push_back(0);
-	indices.push_back(1);
-	indices.push_back(2);
-	indices.push_back(2);
-	indices.push_back(3);
-	indices.push_back(0);
+
+	Vector<Color> colors = {
+		Color(1, 1, 1, 1),
+		Color(1, 1, 1, 1),
+		Color(1, 1, 1, 1),
+		Color(1, 1, 1, 1)
+	};
+
+	Vector<int> indices = { 0, 1, 2, 2, 3, 0 };
 
 	Array arr;
 	arr.resize(RS::ARRAY_MAX);
@@ -250,7 +250,7 @@ TypedArray<String> CPUParticles2D::get_configuration_warnings() const {
 	if (get_material().is_null() || (mat && !mat->get_particles_animation())) {
 		if (get_param_max(PARAM_ANIM_SPEED) != 0.0 || get_param_max(PARAM_ANIM_OFFSET) != 0.0 ||
 				get_param_curve(PARAM_ANIM_SPEED).is_valid() || get_param_curve(PARAM_ANIM_OFFSET).is_valid()) {
-			warnings.push_back(TTR("CPUParticles2D animation requires the usage of a CanvasItemMaterial with \"Particles Animation\" enabled."));
+			warnings.push_back(RTR("CPUParticles2D animation requires the usage of a CanvasItemMaterial with \"Particles Animation\" enabled."));
 		}
 	}
 
@@ -500,7 +500,7 @@ bool CPUParticles2D::get_split_scale() {
 }
 
 void CPUParticles2D::_validate_property(PropertyInfo &property) const {
-	if (property.name == "emission_sphere_radius" && emission_shape != EMISSION_SHAPE_SPHERE) {
+	if (property.name == "emission_sphere_radius" && (emission_shape != EMISSION_SHAPE_SPHERE && emission_shape != EMISSION_SHAPE_SPHERE_SURFACE)) {
 		property.usage = PROPERTY_USAGE_NONE;
 	}
 
@@ -743,7 +743,7 @@ void CPUParticles2D::_particles_process(double p_delta) {
 
 			real_t angle1_rad = direction.angle() + Math::deg2rad((Math::randf() * 2.0 - 1.0) * spread);
 			Vector2 rot = Vector2(Math::cos(angle1_rad), Math::sin(angle1_rad));
-			p.velocity = rot * Math::lerp(parameters_min[PARAM_INITIAL_LINEAR_VELOCITY], parameters_min[PARAM_INITIAL_LINEAR_VELOCITY], (real_t)Math::randf());
+			p.velocity = rot * Math::lerp(parameters_min[PARAM_INITIAL_LINEAR_VELOCITY], parameters_max[PARAM_INITIAL_LINEAR_VELOCITY], (real_t)Math::randf());
 
 			real_t base_angle = tex_angle * Math::lerp(parameters_min[PARAM_ANGLE], parameters_max[PARAM_ANGLE], p.angle_rand);
 			p.rotation = Math::deg2rad(base_angle);
@@ -762,6 +762,11 @@ void CPUParticles2D::_particles_process(double p_delta) {
 					//do none
 				} break;
 				case EMISSION_SHAPE_SPHERE: {
+					real_t t = Math_TAU * Math::randf();
+					real_t radius = emission_sphere_radius * Math::randf();
+					p.transform[2] = Vector2(Math::cos(t), Math::sin(t)) * radius;
+				} break;
+				case EMISSION_SHAPE_SPHERE_SURFACE: {
 					real_t s = Math::randf(), t = Math_TAU * Math::randf();
 					real_t radius = emission_sphere_radius * Math::sqrt(1.0 - s * s);
 					p.transform[2] = Vector2(Math::cos(t), Math::sin(t)) * radius;
@@ -783,8 +788,8 @@ void CPUParticles2D::_particles_process(double p_delta) {
 					if (emission_shape == EMISSION_SHAPE_DIRECTED_POINTS && emission_normals.size() == pc) {
 						Vector2 normal = emission_normals.get(random_idx);
 						Transform2D m2;
-						m2.set_axis(0, normal);
-						m2.set_axis(1, normal.orthogonal());
+						m2.columns[0] = normal;
+						m2.columns[1] = normal.orthogonal();
 						p.velocity = m2.basis_xform(p.velocity);
 					}
 
@@ -964,13 +969,13 @@ void CPUParticles2D::_particles_process(double p_delta) {
 
 		if (particle_flags[PARTICLE_FLAG_ALIGN_Y_TO_VELOCITY]) {
 			if (p.velocity.length() > 0.0) {
-				p.transform.elements[1] = p.velocity.normalized();
-				p.transform.elements[0] = p.transform.elements[1].orthogonal();
+				p.transform.columns[1] = p.velocity.normalized();
+				p.transform.columns[0] = p.transform.columns[1].orthogonal();
 			}
 
 		} else {
-			p.transform.elements[0] = Vector2(Math::cos(p.rotation), -Math::sin(p.rotation));
-			p.transform.elements[1] = Vector2(Math::sin(p.rotation), Math::cos(p.rotation));
+			p.transform.columns[0] = Vector2(Math::cos(p.rotation), -Math::sin(p.rotation));
+			p.transform.columns[1] = Vector2(Math::sin(p.rotation), Math::cos(p.rotation));
 		}
 
 		//scale by scale
@@ -981,8 +986,8 @@ void CPUParticles2D::_particles_process(double p_delta) {
 		if (base_scale.y < 0.00001) {
 			base_scale.y = 0.00001;
 		}
-		p.transform.elements[0] *= base_scale.x;
-		p.transform.elements[1] *= base_scale.y;
+		p.transform.columns[0] *= base_scale.x;
+		p.transform.columns[1] *= base_scale.y;
 
 		p.transform[2] += p.velocity * local_delta;
 	}
@@ -1024,14 +1029,14 @@ void CPUParticles2D::_update_particle_data_buffer() {
 		}
 
 		if (r[idx].active) {
-			ptr[0] = t.elements[0][0];
-			ptr[1] = t.elements[1][0];
+			ptr[0] = t.columns[0][0];
+			ptr[1] = t.columns[1][0];
 			ptr[2] = 0;
-			ptr[3] = t.elements[2][0];
-			ptr[4] = t.elements[0][1];
-			ptr[5] = t.elements[1][1];
+			ptr[3] = t.columns[2][0];
+			ptr[4] = t.columns[0][1];
+			ptr[5] = t.columns[1][1];
 			ptr[6] = 0;
-			ptr[7] = t.elements[2][1];
+			ptr[7] = t.columns[2][1];
 
 		} else {
 			memset(ptr, 0, sizeof(float) * 8);
@@ -1091,9 +1096,11 @@ void CPUParticles2D::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			set_process_internal(emitting);
 		} break;
+
 		case NOTIFICATION_EXIT_TREE: {
 			_set_redraw(false);
 		} break;
+
 		case NOTIFICATION_DRAW: {
 			// first update before rendering to avoid one frame delay after emitting starts
 			if (emitting && (time == 0)) {
@@ -1111,9 +1118,11 @@ void CPUParticles2D::_notification(int p_what) {
 
 			RS::get_singleton()->canvas_item_add_multimesh(get_canvas_item(), multimesh, texrid);
 		} break;
+
 		case NOTIFICATION_INTERNAL_PROCESS: {
 			_update_internal();
 		} break;
+
 		case NOTIFICATION_TRANSFORM_CHANGED: {
 			inv_emission_transform = get_global_transform().affine_inverse();
 
@@ -1128,14 +1137,14 @@ void CPUParticles2D::_notification(int p_what) {
 					Transform2D t = inv_emission_transform * r[i].transform;
 
 					if (r[i].active) {
-						ptr[0] = t.elements[0][0];
-						ptr[1] = t.elements[1][0];
+						ptr[0] = t.columns[0][0];
+						ptr[1] = t.columns[1][0];
 						ptr[2] = 0;
-						ptr[3] = t.elements[2][0];
-						ptr[4] = t.elements[0][1];
-						ptr[5] = t.elements[1][1];
+						ptr[3] = t.columns[2][0];
+						ptr[4] = t.columns[0][1];
+						ptr[5] = t.columns[1][1];
 						ptr[6] = 0;
-						ptr[7] = t.elements[2][1];
+						ptr[7] = t.columns[2][1];
 
 					} else {
 						memset(ptr, 0, sizeof(float) * 8);
@@ -1353,7 +1362,7 @@ void CPUParticles2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("convert_from_particles", "particles"), &CPUParticles2D::convert_from_particles);
 
 	ADD_GROUP("Emission Shape", "emission_");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "emission_shape", PROPERTY_HINT_ENUM, "Point,Sphere,Box,Points,Directed Points", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), "set_emission_shape", "get_emission_shape");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "emission_shape", PROPERTY_HINT_ENUM, "Point,Sphere,Sphere Surface,Box,Points,Directed Points", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), "set_emission_shape", "get_emission_shape");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "emission_sphere_radius", PROPERTY_HINT_RANGE, "0.01,128,0.01"), "set_emission_sphere_radius", "get_emission_sphere_radius");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "emission_rect_extents"), "set_emission_rect_extents", "get_emission_rect_extents");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_VECTOR2_ARRAY, "emission_points"), "set_emission_points", "get_emission_points");
@@ -1443,6 +1452,7 @@ void CPUParticles2D::_bind_methods() {
 
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_POINT);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_SPHERE);
+	BIND_ENUM_CONSTANT(EMISSION_SHAPE_SPHERE_SURFACE);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_RECTANGLE);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_POINTS);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_DIRECTED_POINTS);

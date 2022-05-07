@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -37,10 +37,6 @@
 
 AABB CPUParticles3D::get_aabb() const {
 	return AABB();
-}
-
-Vector<Face3> CPUParticles3D::get_faces(uint32_t p_usage_particle_flags) const {
-	return Vector<Face3>();
 }
 
 void CPUParticles3D::set_emitting(bool p_emitting) {
@@ -210,11 +206,11 @@ TypedArray<String> CPUParticles3D::get_configuration_warnings() const {
 	anim_material_found = anim_material_found || (spat && spat->get_billboard_mode() == StandardMaterial3D::BILLBOARD_PARTICLES);
 
 	if (!mesh_found) {
-		warnings.push_back(TTR("Nothing is visible because no mesh has been assigned."));
+		warnings.push_back(RTR("Nothing is visible because no mesh has been assigned."));
 	}
 
 	if (!anim_material_found && (get_param_max(PARAM_ANIM_SPEED) != 0.0 || get_param_max(PARAM_ANIM_OFFSET) != 0.0 || get_param_curve(PARAM_ANIM_SPEED).is_valid() || get_param_curve(PARAM_ANIM_OFFSET).is_valid())) {
-		warnings.push_back(TTR("CPUParticles3D animation requires the usage of a StandardMaterial3D whose Billboard Mode is set to \"Particle Billboard\"."));
+		warnings.push_back(RTR("CPUParticles3D animation requires the usage of a StandardMaterial3D whose Billboard Mode is set to \"Particle Billboard\"."));
 	}
 
 	return warnings;
@@ -512,7 +508,7 @@ bool CPUParticles3D::get_split_scale() {
 }
 
 void CPUParticles3D::_validate_property(PropertyInfo &property) const {
-	if (property.name == "emission_sphere_radius" && emission_shape != EMISSION_SHAPE_SPHERE) {
+	if (property.name == "emission_sphere_radius" && (emission_shape != EMISSION_SHAPE_SPHERE && emission_shape != EMISSION_SHAPE_SPHERE_SURFACE)) {
 		property.usage = PROPERTY_USAGE_NONE;
 	}
 
@@ -808,6 +804,13 @@ void CPUParticles3D::_particles_process(double p_delta) {
 				case EMISSION_SHAPE_SPHERE: {
 					real_t s = 2.0 * Math::randf() - 1.0;
 					real_t t = Math_TAU * Math::randf();
+					real_t x = Math::randf();
+					real_t radius = emission_sphere_radius * Math::sqrt(1.0 - s * s);
+					p.transform.origin = Vector3(0, 0, 0).lerp(Vector3(radius * Math::cos(t), radius * Math::sin(t), emission_sphere_radius * s), x);
+				} break;
+				case EMISSION_SHAPE_SPHERE_SURFACE: {
+					real_t s = 2.0 * Math::randf() - 1.0;
+					real_t t = Math_TAU * Math::randf();
 					real_t radius = emission_sphere_radius * Math::sqrt(1.0 - s * s);
 					p.transform.origin = Vector3(radius * Math::cos(t), radius * Math::sin(t), emission_sphere_radius * s);
 				} break;
@@ -830,8 +833,8 @@ void CPUParticles3D::_particles_process(double p_delta) {
 							Vector3 normal = emission_normals.get(random_idx);
 							Vector2 normal_2d(normal.x, normal.y);
 							Transform2D m2;
-							m2.set_axis(0, normal_2d);
-							m2.set_axis(1, normal_2d.orthogonal());
+							m2.columns[0] = normal_2d;
+							m2.columns[1] = normal_2d.orthogonal();
 							Vector2 velocity_2d(p.velocity.x, p.velocity.y);
 							velocity_2d = m2.basis_xform(velocity_2d);
 							p.velocity.x = velocity_2d.x;
@@ -842,9 +845,9 @@ void CPUParticles3D::_particles_process(double p_delta) {
 							Vector3 tangent = v0.cross(normal).normalized();
 							Vector3 bitangent = tangent.cross(normal).normalized();
 							Basis m3;
-							m3.set_axis(0, tangent);
-							m3.set_axis(1, bitangent);
-							m3.set_axis(2, normal);
+							m3.set_column(0, tangent);
+							m3.set_column(1, bitangent);
+							m3.set_column(2, normal);
 							p.velocity = m3.xform(p.velocity);
 						}
 					}
@@ -1065,33 +1068,33 @@ void CPUParticles3D::_particles_process(double p_delta) {
 		if (particle_flags[PARTICLE_FLAG_DISABLE_Z]) {
 			if (particle_flags[PARTICLE_FLAG_ALIGN_Y_TO_VELOCITY]) {
 				if (p.velocity.length() > 0.0) {
-					p.transform.basis.set_axis(1, p.velocity.normalized());
+					p.transform.basis.set_column(1, p.velocity.normalized());
 				} else {
-					p.transform.basis.set_axis(1, p.transform.basis.get_axis(1));
+					p.transform.basis.set_column(1, p.transform.basis.get_column(1));
 				}
-				p.transform.basis.set_axis(0, p.transform.basis.get_axis(1).cross(p.transform.basis.get_axis(2)).normalized());
-				p.transform.basis.set_axis(2, Vector3(0, 0, 1));
+				p.transform.basis.set_column(0, p.transform.basis.get_column(1).cross(p.transform.basis.get_column(2)).normalized());
+				p.transform.basis.set_column(2, Vector3(0, 0, 1));
 
 			} else {
-				p.transform.basis.set_axis(0, Vector3(Math::cos(p.custom[0]), -Math::sin(p.custom[0]), 0.0));
-				p.transform.basis.set_axis(1, Vector3(Math::sin(p.custom[0]), Math::cos(p.custom[0]), 0.0));
-				p.transform.basis.set_axis(2, Vector3(0, 0, 1));
+				p.transform.basis.set_column(0, Vector3(Math::cos(p.custom[0]), -Math::sin(p.custom[0]), 0.0));
+				p.transform.basis.set_column(1, Vector3(Math::sin(p.custom[0]), Math::cos(p.custom[0]), 0.0));
+				p.transform.basis.set_column(2, Vector3(0, 0, 1));
 			}
 
 		} else {
 			//orient particle Y towards velocity
 			if (particle_flags[PARTICLE_FLAG_ALIGN_Y_TO_VELOCITY]) {
 				if (p.velocity.length() > 0.0) {
-					p.transform.basis.set_axis(1, p.velocity.normalized());
+					p.transform.basis.set_column(1, p.velocity.normalized());
 				} else {
-					p.transform.basis.set_axis(1, p.transform.basis.get_axis(1).normalized());
+					p.transform.basis.set_column(1, p.transform.basis.get_column(1).normalized());
 				}
-				if (p.transform.basis.get_axis(1) == p.transform.basis.get_axis(0)) {
-					p.transform.basis.set_axis(0, p.transform.basis.get_axis(1).cross(p.transform.basis.get_axis(2)).normalized());
-					p.transform.basis.set_axis(2, p.transform.basis.get_axis(0).cross(p.transform.basis.get_axis(1)).normalized());
+				if (p.transform.basis.get_column(1) == p.transform.basis.get_column(0)) {
+					p.transform.basis.set_column(0, p.transform.basis.get_column(1).cross(p.transform.basis.get_column(2)).normalized());
+					p.transform.basis.set_column(2, p.transform.basis.get_column(0).cross(p.transform.basis.get_column(1)).normalized());
 				} else {
-					p.transform.basis.set_axis(2, p.transform.basis.get_axis(0).cross(p.transform.basis.get_axis(1)).normalized());
-					p.transform.basis.set_axis(0, p.transform.basis.get_axis(1).cross(p.transform.basis.get_axis(2)).normalized());
+					p.transform.basis.set_column(2, p.transform.basis.get_column(0).cross(p.transform.basis.get_column(1)).normalized());
+					p.transform.basis.set_column(0, p.transform.basis.get_column(1).cross(p.transform.basis.get_column(2)).normalized());
 				}
 			} else {
 				p.transform.basis.orthonormalize();
@@ -1156,7 +1159,7 @@ void CPUParticles3D::_update_particle_data_buffer() {
 			ERR_FAIL_NULL(get_viewport());
 			Camera3D *c = get_viewport()->get_camera_3d();
 			if (c) {
-				Vector3 dir = c->get_global_transform().basis.get_axis(2); //far away to close
+				Vector3 dir = c->get_global_transform().basis.get_column(2); //far away to close
 
 				if (local_coords) {
 					// will look different from Particles in editor as this is based on the camera in the scenetree
@@ -1184,17 +1187,17 @@ void CPUParticles3D::_update_particle_data_buffer() {
 		}
 
 		if (r[idx].active) {
-			ptr[0] = t.basis.elements[0][0];
-			ptr[1] = t.basis.elements[0][1];
-			ptr[2] = t.basis.elements[0][2];
+			ptr[0] = t.basis.rows[0][0];
+			ptr[1] = t.basis.rows[0][1];
+			ptr[2] = t.basis.rows[0][2];
 			ptr[3] = t.origin.x;
-			ptr[4] = t.basis.elements[1][0];
-			ptr[5] = t.basis.elements[1][1];
-			ptr[6] = t.basis.elements[1][2];
+			ptr[4] = t.basis.rows[1][0];
+			ptr[5] = t.basis.rows[1][1];
+			ptr[6] = t.basis.rows[1][2];
 			ptr[7] = t.origin.y;
-			ptr[8] = t.basis.elements[2][0];
-			ptr[9] = t.basis.elements[2][1];
-			ptr[10] = t.basis.elements[2][2];
+			ptr[8] = t.basis.rows[2][0];
+			ptr[9] = t.basis.rows[2][1];
+			ptr[10] = t.basis.rows[2][2];
 			ptr[11] = t.origin.z;
 		} else {
 			memset(ptr, 0, sizeof(Transform3D));
@@ -1251,65 +1254,67 @@ void CPUParticles3D::_update_render_thread() {
 }
 
 void CPUParticles3D::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE) {
-		set_process_internal(emitting);
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			set_process_internal(emitting);
 
-		// first update before rendering to avoid one frame delay after emitting starts
-		if (emitting && (time == 0)) {
+			// first update before rendering to avoid one frame delay after emitting starts
+			if (emitting && (time == 0)) {
+				_update_internal();
+			}
+		} break;
+
+		case NOTIFICATION_EXIT_TREE: {
+			_set_redraw(false);
+		} break;
+
+		case NOTIFICATION_VISIBILITY_CHANGED: {
+			// first update before rendering to avoid one frame delay after emitting starts
+			if (emitting && (time == 0)) {
+				_update_internal();
+			}
+		} break;
+
+		case NOTIFICATION_INTERNAL_PROCESS: {
 			_update_internal();
-		}
-	}
+		} break;
 
-	if (p_what == NOTIFICATION_EXIT_TREE) {
-		_set_redraw(false);
-	}
+		case NOTIFICATION_TRANSFORM_CHANGED: {
+			inv_emission_transform = get_global_transform().affine_inverse();
 
-	if (p_what == NOTIFICATION_VISIBILITY_CHANGED) {
-		// first update before rendering to avoid one frame delay after emitting starts
-		if (emitting && (time == 0)) {
-			_update_internal();
-		}
-	}
+			if (!local_coords) {
+				int pc = particles.size();
 
-	if (p_what == NOTIFICATION_INTERNAL_PROCESS) {
-		_update_internal();
-	}
+				float *w = particle_data.ptrw();
+				const Particle *r = particles.ptr();
+				float *ptr = w;
 
-	if (p_what == NOTIFICATION_TRANSFORM_CHANGED) {
-		inv_emission_transform = get_global_transform().affine_inverse();
+				for (int i = 0; i < pc; i++) {
+					Transform3D t = inv_emission_transform * r[i].transform;
 
-		if (!local_coords) {
-			int pc = particles.size();
+					if (r[i].active) {
+						ptr[0] = t.basis.rows[0][0];
+						ptr[1] = t.basis.rows[0][1];
+						ptr[2] = t.basis.rows[0][2];
+						ptr[3] = t.origin.x;
+						ptr[4] = t.basis.rows[1][0];
+						ptr[5] = t.basis.rows[1][1];
+						ptr[6] = t.basis.rows[1][2];
+						ptr[7] = t.origin.y;
+						ptr[8] = t.basis.rows[2][0];
+						ptr[9] = t.basis.rows[2][1];
+						ptr[10] = t.basis.rows[2][2];
+						ptr[11] = t.origin.z;
+					} else {
+						memset(ptr, 0, sizeof(float) * 12);
+					}
 
-			float *w = particle_data.ptrw();
-			const Particle *r = particles.ptr();
-			float *ptr = w;
-
-			for (int i = 0; i < pc; i++) {
-				Transform3D t = inv_emission_transform * r[i].transform;
-
-				if (r[i].active) {
-					ptr[0] = t.basis.elements[0][0];
-					ptr[1] = t.basis.elements[0][1];
-					ptr[2] = t.basis.elements[0][2];
-					ptr[3] = t.origin.x;
-					ptr[4] = t.basis.elements[1][0];
-					ptr[5] = t.basis.elements[1][1];
-					ptr[6] = t.basis.elements[1][2];
-					ptr[7] = t.origin.y;
-					ptr[8] = t.basis.elements[2][0];
-					ptr[9] = t.basis.elements[2][1];
-					ptr[10] = t.basis.elements[2][2];
-					ptr[11] = t.origin.z;
-				} else {
-					memset(ptr, 0, sizeof(float) * 12);
+					ptr += 20;
 				}
 
-				ptr += 20;
+				can_update.set();
 			}
-
-			can_update.set();
-		}
+		} break;
 	}
 }
 
@@ -1532,7 +1537,7 @@ void CPUParticles3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("convert_from_particles", "particles"), &CPUParticles3D::convert_from_particles);
 
 	ADD_GROUP("Emission Shape", "emission_");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "emission_shape", PROPERTY_HINT_ENUM, "Point,Sphere,Box,Points,Directed Points,Ring", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), "set_emission_shape", "get_emission_shape");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "emission_shape", PROPERTY_HINT_ENUM, "Point,Sphere,Sphere Surface,Box,Points,Directed Points,Ring", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), "set_emission_shape", "get_emission_shape");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "emission_sphere_radius", PROPERTY_HINT_RANGE, "0.01,128,0.01"), "set_emission_sphere_radius", "get_emission_sphere_radius");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "emission_box_extents"), "set_emission_box_extents", "get_emission_box_extents");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_VECTOR3_ARRAY, "emission_points"), "set_emission_points", "get_emission_points");
@@ -1629,6 +1634,7 @@ void CPUParticles3D::_bind_methods() {
 
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_POINT);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_SPHERE);
+	BIND_ENUM_CONSTANT(EMISSION_SHAPE_SPHERE_SURFACE);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_BOX);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_POINTS);
 	BIND_ENUM_CONSTANT(EMISSION_SHAPE_DIRECTED_POINTS);

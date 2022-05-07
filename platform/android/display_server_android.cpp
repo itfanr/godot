@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -34,6 +34,7 @@
 #include "java_godot_io_wrapper.h"
 #include "java_godot_wrapper.h"
 #include "os_android.h"
+#include "tts_android.h"
 
 #if defined(VULKAN_ENABLED)
 #include "drivers/vulkan/rendering_device_vulkan.h"
@@ -42,12 +43,11 @@
 #endif
 
 DisplayServerAndroid *DisplayServerAndroid::get_singleton() {
-	return (DisplayServerAndroid *)DisplayServer::get_singleton();
+	return static_cast<DisplayServerAndroid *>(DisplayServer::get_singleton());
 }
 
 bool DisplayServerAndroid::has_feature(Feature p_feature) const {
 	switch (p_feature) {
-		//case FEATURE_CONSOLE_WINDOW:
 		case FEATURE_CURSOR_SHAPE:
 		//case FEATURE_CUSTOM_CURSOR_SHAPE:
 		//case FEATURE_GLOBAL_MENU:
@@ -64,6 +64,7 @@ bool DisplayServerAndroid::has_feature(Feature p_feature) const {
 		case FEATURE_ORIENTATION:
 		case FEATURE_TOUCHSCREEN:
 		case FEATURE_VIRTUAL_KEYBOARD:
+		case FEATURE_TEXT_TO_SPEECH:
 			return true;
 		default:
 			return false;
@@ -72,6 +73,34 @@ bool DisplayServerAndroid::has_feature(Feature p_feature) const {
 
 String DisplayServerAndroid::get_name() const {
 	return "Android";
+}
+
+bool DisplayServerAndroid::tts_is_speaking() const {
+	return TTS_Android::is_speaking();
+}
+
+bool DisplayServerAndroid::tts_is_paused() const {
+	return TTS_Android::is_paused();
+}
+
+Array DisplayServerAndroid::tts_get_voices() const {
+	return TTS_Android::get_voices();
+}
+
+void DisplayServerAndroid::tts_speak(const String &p_text, const String &p_voice, int p_volume, float p_pitch, float p_rate, int p_utterance_id, bool p_interrupt) {
+	TTS_Android::speak(p_text, p_voice, p_volume, p_pitch, p_rate, p_utterance_id, p_interrupt);
+}
+
+void DisplayServerAndroid::tts_pause() {
+	TTS_Android::pause();
+}
+
+void DisplayServerAndroid::tts_resume() {
+	TTS_Android::resume();
+}
+
+void DisplayServerAndroid::tts_stop() {
+	TTS_Android::stop();
 }
 
 void DisplayServerAndroid::clipboard_set(const String &p_text) {
@@ -94,6 +123,29 @@ String DisplayServerAndroid::clipboard_get() const {
 	} else {
 		return DisplayServer::clipboard_get();
 	}
+}
+
+bool DisplayServerAndroid::clipboard_has() const {
+	GodotJavaWrapper *godot_java = OS_Android::get_singleton()->get_godot_java();
+	ERR_FAIL_COND_V(!godot_java, false);
+
+	if (godot_java->has_has_clipboard()) {
+		return godot_java->has_clipboard();
+	} else {
+		return DisplayServer::clipboard_has();
+	}
+}
+
+Array DisplayServerAndroid::get_display_cutouts() const {
+	GodotIOJavaWrapper *godot_io_java = OS_Android::get_singleton()->get_godot_io_java();
+	ERR_FAIL_NULL_V(godot_io_java, Array());
+	return godot_io_java->get_display_cutouts();
+}
+
+Rect2i DisplayServerAndroid::get_display_safe_area() const {
+	GodotIOJavaWrapper *godot_io_java = OS_Android::get_singleton()->get_godot_io_java();
+	ERR_FAIL_NULL_V(godot_io_java, Rect2i());
+	return godot_io_java->get_display_safe_area();
 }
 
 void DisplayServerAndroid::screen_set_keep_on(bool p_enable) {
@@ -137,11 +189,8 @@ Size2i DisplayServerAndroid::screen_get_size(int p_screen) const {
 }
 
 Rect2i DisplayServerAndroid::screen_get_usable_rect(int p_screen) const {
-	GodotIOJavaWrapper *godot_io_java = OS_Android::get_singleton()->get_godot_io_java();
-	ERR_FAIL_COND_V(!godot_io_java, Rect2i());
-	int xywh[4];
-	godot_io_java->screen_get_usable_rect(xywh);
-	return Rect2i(xywh[0], xywh[1], xywh[2], xywh[3]);
+	Size2i display_size = OS_Android::get_singleton()->get_display_size();
+	return Rect2i(0, 0, display_size.width, display_size.height);
 }
 
 int DisplayServerAndroid::screen_get_dpi(int p_screen) const {
@@ -149,6 +198,23 @@ int DisplayServerAndroid::screen_get_dpi(int p_screen) const {
 	ERR_FAIL_COND_V(!godot_io_java, 0);
 
 	return godot_io_java->get_screen_dpi();
+}
+
+float DisplayServerAndroid::screen_get_scale(int p_screen) const {
+	GodotIOJavaWrapper *godot_io_java = OS_Android::get_singleton()->get_godot_io_java();
+	ERR_FAIL_COND_V(!godot_io_java, 1.0f);
+
+	return godot_io_java->get_scaled_density();
+}
+
+float DisplayServerAndroid::screen_get_refresh_rate(int p_screen) const {
+	GodotIOJavaWrapper *godot_io_java = OS_Android::get_singleton()->get_godot_io_java();
+	if (!godot_io_java) {
+		ERR_PRINT("An error occurred while trying to get the screen refresh rate.");
+		return SCREEN_REFRESH_RATE_FALLBACK;
+	}
+
+	return godot_io_java->get_screen_refresh_rate(SCREEN_REFRESH_RATE_FALLBACK);
 }
 
 bool DisplayServerAndroid::screen_is_touchscreen(int p_screen) const {
@@ -241,6 +307,24 @@ Vector<DisplayServer::WindowID> DisplayServerAndroid::get_window_list() const {
 
 DisplayServer::WindowID DisplayServerAndroid::get_window_at_screen_position(const Point2i &p_position) const {
 	return MAIN_WINDOW_ID;
+}
+
+int64_t DisplayServerAndroid::window_get_native_handle(HandleType p_handle_type, WindowID p_window) const {
+	ERR_FAIL_COND_V(p_window != MAIN_WINDOW_ID, 0);
+	switch (p_handle_type) {
+		case DISPLAY_HANDLE: {
+			return 0; // Not supported.
+		}
+		case WINDOW_HANDLE: {
+			return reinterpret_cast<int64_t>(static_cast<OS_Android *>(OS::get_singleton())->get_godot_java()->get_activity());
+		}
+		case WINDOW_VIEW: {
+			return 0; // Not supported.
+		}
+		default: {
+			return 0;
+		}
+	}
 }
 
 void DisplayServerAndroid::window_attach_instance_id(ObjectID p_instance, DisplayServer::WindowID p_window) {

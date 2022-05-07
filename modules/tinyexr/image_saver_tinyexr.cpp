@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -275,8 +275,8 @@ Error save_exr(const String &p_path, const Ref<Image> &p_img, bool p_grayscale) 
 		print_error(String("Saving EXR failed. Error: {0}").format(varray(err)));
 		return ERR_FILE_CANT_WRITE;
 	} else {
-		FileAccessRef ref = FileAccess::open(p_path, FileAccess::WRITE);
-		ERR_FAIL_COND_V(!ref, ERR_FILE_CANT_WRITE);
+		Ref<FileAccess> ref = FileAccess::open(p_path, FileAccess::WRITE);
+		ERR_FAIL_COND_V(ref.is_null(), ERR_FILE_CANT_WRITE);
 		ref->store_buffer(mem, bytes);
 		free(mem);
 	}

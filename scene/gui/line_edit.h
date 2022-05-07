@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -82,7 +82,6 @@ private:
 	String placeholder;
 	String placeholder_translated;
 	String secret_character = "*";
-	float placeholder_alpha = 0.6;
 	String ime_text;
 	Point2 ime_selection;
 
@@ -97,7 +96,7 @@ private:
 	PopupMenu *menu_dir = nullptr;
 	PopupMenu *menu_ctl = nullptr;
 
-	bool caret_mid_grapheme_enabled = false;
+	bool caret_mid_grapheme_enabled = true;
 
 	int caret_column = 0;
 	int scroll_offset = 0;
@@ -107,7 +106,7 @@ private:
 	String language;
 	TextDirection text_direction = TEXT_DIRECTION_AUTO;
 	TextDirection input_direction = TEXT_DIRECTION_LTR;
-	Control::StructuredTextParser st_parser = STRUCTURED_TEXT_DEFAULT;
+	TextServer::StructuredTextParser st_parser = TextServer::STRUCTURED_TEXT_DEFAULT;
 	Array st_args;
 	bool draw_control_chars = false;
 
@@ -203,6 +202,7 @@ private:
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
+	virtual void unhandled_key_input(const Ref<InputEvent> &p_event) override;
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
 
 	bool _set(const StringName &p_name, const Variant &p_value);
@@ -253,17 +253,14 @@ public:
 	void set_draw_control_chars(bool p_draw_control_chars);
 	bool get_draw_control_chars() const;
 
-	void set_structured_text_bidi_override(Control::StructuredTextParser p_parser);
-	Control::StructuredTextParser get_structured_text_bidi_override() const;
+	void set_structured_text_bidi_override(TextServer::StructuredTextParser p_parser);
+	TextServer::StructuredTextParser get_structured_text_bidi_override() const;
 
 	void set_structured_text_bidi_override_options(Array p_args);
 	Array get_structured_text_bidi_override_options() const;
 
 	void set_placeholder(String p_text);
 	String get_placeholder() const;
-
-	void set_placeholder_alpha(float p_alpha);
-	float get_placeholder_alpha() const;
 
 	void set_caret_column(int p_column);
 	int get_caret_column() const;
@@ -336,7 +333,7 @@ public:
 
 	void show_virtual_keyboard();
 
-	LineEdit();
+	LineEdit(const String &p_placeholder = String());
 	~LineEdit();
 };
 

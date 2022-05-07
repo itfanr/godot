@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -33,12 +33,13 @@
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/core_string_names.h"
+#include "core/io/missing_resource.h"
 #include "core/io/resource_loader.h"
-#include "editor/editor_inspector.h"
 #include "scene/2d/node_2d.h"
 #include "scene/3d/node_3d.h"
 #include "scene/gui/control.h"
 #include "scene/main/instance_placeholder.h"
+#include "scene/main/missing_node.h"
 #include "scene/property_utils.h"
 
 #define PACKED_SCENE_VERSION 2
@@ -48,10 +49,7 @@ bool SceneState::can_instantiate() const {
 }
 
 static Array _sanitize_node_pinned_properties(Node *p_node) {
-	if (!p_node->has_meta("_edit_pinned_properties_")) {
-		return Array();
-	}
-	Array pinned = p_node->get_meta("_edit_pinned_properties_");
+	Array pinned = p_node->get_meta("_edit_pinned_properties_", Array());
 	if (pinned.is_empty()) {
 		return Array();
 	}
@@ -131,6 +129,7 @@ Node *SceneState::instantiate(GenEditState p_edit_state) const {
 		}
 
 		Node *node = nullptr;
+		MissingNode *missing_node = nullptr;
 
 		if (i == 0 && base_scene_idx >= 0) {
 			//scene inheritance on root node
@@ -175,37 +174,44 @@ Node *SceneState::instantiate(GenEditState p_edit_state) const {
 #endif
 			}
 		} else {
-			Object *obj = nullptr;
+			//node belongs to this scene and must be created
+			Object *obj = ClassDB::instantiate(snames[n.type]);
 
-			if (ClassDB::is_class_enabled(snames[n.type])) {
-				//node belongs to this scene and must be created
-				obj = ClassDB::instantiate(snames[n.type]);
-			}
+			node = Object::cast_to<Node>(obj);
 
-			if (!Object::cast_to<Node>(obj)) {
+			if (!node) {
 				if (obj) {
 					memdelete(obj);
 					obj = nullptr;
 				}
-				WARN_PRINT(vformat("Node %s of type %s cannot be created. A placeholder will be created instead.", snames[n.name], snames[n.type]).ascii().get_data());
-				if (n.parent >= 0 && n.parent < nc && ret_nodes[n.parent]) {
-					if (Object::cast_to<Control>(ret_nodes[n.parent])) {
-						obj = memnew(Control);
-					} else if (Object::cast_to<Node2D>(ret_nodes[n.parent])) {
-						obj = memnew(Node2D);
-#ifndef _3D_DISABLED
-					} else if (Object::cast_to<Node3D>(ret_nodes[n.parent])) {
-						obj = memnew(Node3D);
-#endif // _3D_DISABLED
-					}
-				}
 
-				if (!obj) {
-					obj = memnew(Node);
+				if (ResourceLoader::is_creating_missing_resources_if_class_unavailable_enabled()) {
+					missing_node = memnew(MissingNode);
+					missing_node->set_original_class(snames[n.type]);
+					missing_node->set_recording_properties(true);
+					node = missing_node;
+					obj = missing_node;
+				} else {
+					WARN_PRINT(vformat("Node %s of type %s cannot be created. A placeholder will be created instead.", snames[n.name], snames[n.type]).ascii().get_data());
+					if (n.parent >= 0 && n.parent < nc && ret_nodes[n.parent]) {
+						if (Object::cast_to<Control>(ret_nodes[n.parent])) {
+							obj = memnew(Control);
+						} else if (Object::cast_to<Node2D>(ret_nodes[n.parent])) {
+							obj = memnew(Node2D);
+#ifndef _3D_DISABLED
+						} else if (Object::cast_to<Node3D>(ret_nodes[n.parent])) {
+							obj = memnew(Node3D);
+#endif // _3D_DISABLED
+						}
+					}
+
+					if (!obj) {
+						obj = memnew(Node);
+					}
+
+					node = Object::cast_to<Node>(obj);
 				}
 			}
-
-			node = Object::cast_to<Node>(obj);
 		}
 
 		if (node) {
@@ -216,6 +222,8 @@ Node *SceneState::instantiate(GenEditState p_edit_state) const {
 			int nprop_count = n.properties.size();
 			if (nprop_count) {
 				const NodeData::Property *nprops = &n.properties[0];
+
+				Dictionary missing_resource_properties;
 
 				for (int j = 0; j < nprop_count; j++) {
 					bool valid;
@@ -273,8 +281,23 @@ Node *SceneState::instantiate(GenEditState p_edit_state) const {
 						} else if (p_edit_state == GEN_EDIT_STATE_INSTANCE) {
 							value = value.duplicate(true); // Duplicate arrays and dictionaries for the editor
 						}
-						node->set(snames[nprops[j].name], value, &valid);
+
+						bool set_valid = true;
+						if (ResourceLoader::is_creating_missing_resources_if_class_unavailable_enabled() && value.get_type() == Variant::OBJECT) {
+							Ref<MissingResource> mr = value;
+							if (mr.is_valid()) {
+								missing_resource_properties[snames[nprops[j].name]] = mr;
+								set_valid = false;
+							}
+						}
+
+						if (set_valid) {
+							node->set(snames[nprops[j].name], value, &valid);
+						}
 					}
+				}
+				if (!missing_resource_properties.is_empty()) {
+					node->set_meta(META_MISSING_RESOURCES, missing_resource_properties);
 				}
 			}
 
@@ -313,6 +336,9 @@ Node *SceneState::instantiate(GenEditState p_edit_state) const {
 				NODE_FROM_ID(owner, n.owner);
 				if (owner) {
 					node->_set_owner_nocheck(owner);
+					if (node->data.unique_name_in_owner) {
+						node->_acquire_unique_name_in_owner();
+					}
 				}
 			}
 
@@ -322,6 +348,10 @@ Node *SceneState::instantiate(GenEditState p_edit_state) const {
 			} else {
 				node->remove_meta("_edit_pinned_properties_");
 			}
+		}
+
+		if (missing_node) {
+			missing_node->set_recording_properties(false);
 		}
 
 		ret_nodes[i] = node;
@@ -353,15 +383,26 @@ Node *SceneState::instantiate(GenEditState p_edit_state) const {
 			continue;
 		}
 
-		Vector<Variant> binds;
-		if (c.binds.size()) {
-			binds.resize(c.binds.size());
-			for (int j = 0; j < c.binds.size(); j++) {
-				binds.write[j] = props[c.binds[j]];
+		Callable callable(cto, snames[c.method]);
+		if (c.unbinds > 0) {
+			callable = callable.unbind(c.unbinds);
+		} else if (!c.binds.is_empty()) {
+			Vector<Variant> binds;
+			if (c.binds.size()) {
+				binds.resize(c.binds.size());
+				for (int j = 0; j < c.binds.size(); j++) {
+					binds.write[j] = props[c.binds[j]];
+				}
 			}
+
+			const Variant **argptrs = (const Variant **)alloca(sizeof(Variant *) * binds.size());
+			for (int j = 0; j < binds.size(); j++) {
+				argptrs[j] = &binds[j];
+			}
+			callable = callable.bind(argptrs, binds.size());
 		}
 
-		cfrom->connect(snames[c.signal], Callable(cto, snames[c.method]), binds, CONNECT_PERSIST | c.flags);
+		cfrom->connect(snames[c.signal], callable, varray(), CONNECT_PERSIST | c.flags);
 	}
 
 	//Node *s = ret_nodes[0];
@@ -474,33 +515,36 @@ Error SceneState::_parse_node(Node *p_owner, Node *p_node, int p_parent_idx, Map
 	p_node->get_property_list(&plist);
 
 	Array pinned_props = _sanitize_node_pinned_properties(p_node);
+	Dictionary missing_resource_properties = p_node->get_meta(META_MISSING_RESOURCES, Dictionary());
 
 	for (const PropertyInfo &E : plist) {
 		if (!(E.usage & PROPERTY_USAGE_STORAGE)) {
 			continue;
 		}
 
-		Variant forced_value;
+		if (E.name == META_PROPERTY_MISSING_RESOURCES) {
+			continue; // Ignore this property when packing.
+		}
 
-		// If instance or inheriting, not saving if property requested so, or it's meta
-		if (states_stack.size()) {
+		// If instance or inheriting, not saving if property requested so.
+		if (!states_stack.is_empty()) {
 			if ((E.usage & PROPERTY_USAGE_NO_INSTANCE_STATE)) {
 				continue;
-			}
-			// Meta is normally not saved in instances/inherited (see GH-12838), but we need to save the pinned list
-			if (E.name == "__meta__") {
-				if (pinned_props.size()) {
-					Dictionary meta_override;
-					meta_override["_edit_pinned_properties_"] = pinned_props;
-					forced_value = meta_override;
-				}
 			}
 		}
 
 		StringName name = E.name;
-		Variant value = forced_value.get_type() == Variant::NIL ? p_node->get(name) : forced_value;
+		Variant value = p_node->get(name);
 
-		if (!pinned_props.has(name) && forced_value.get_type() == Variant::NIL) {
+		if (E.type == Variant::OBJECT && missing_resource_properties.has(E.name)) {
+			// Was this missing resource overriden? If so do not save the old value.
+			Ref<Resource> ures = value;
+			if (ures.is_null()) {
+				value = missing_resource_properties[E.name];
+			}
+		}
+
+		if (!pinned_props.has(name)) {
 			bool is_valid_default = false;
 			Variant default_value = PropertyUtils::get_property_default_value(p_node, name, &is_valid_default, &states_stack, true);
 			if (is_valid_default && !PropertyUtils::is_property_value_different(value, default_value)) {
@@ -523,10 +567,6 @@ Error SceneState::_parse_node(Node *p_owner, Node *p_node, int p_parent_idx, Map
 		if (!gi.persistent) {
 			continue;
 		}
-		/*
-		if (instance_state_node>=0 && instance_state->is_node_in_group(instance_state_node,gi.name))
-			continue; //group was instantiated, don't add here
-		*/
 
 		bool skip = false;
 		for (const SceneState::PackState &ia : states_stack) {
@@ -559,11 +599,18 @@ Error SceneState::_parse_node(Node *p_owner, Node *p_node, int p_parent_idx, Map
 		nd.owner = -1;
 	}
 
+	MissingNode *missing_node = Object::cast_to<MissingNode>(p_node);
+
 	// Save the right type. If this node was created by an instance
 	// then flag that the node should not be created but reused
 	if (states_stack.is_empty() && !is_editable_instance) {
 		//this node is not part of an instancing process, so save the type
-		nd.type = _nm_get_string(p_node->get_class(), name_map);
+		if (missing_node != nullptr) {
+			// Its a missing node (type non existant on load).
+			nd.type = _nm_get_string(missing_node->get_original_class(), name_map);
+		} else {
+			nd.type = _nm_get_string(p_node->get_class(), name_map);
+		}
 	} else {
 		// this node is part of an instantiated process, so do not save the type.
 		// instead, save that it was instantiated
@@ -652,6 +699,26 @@ Error SceneState::_parse_connections(Node *p_owner, Node *p_node, Map<StringName
 				continue;
 			}
 
+			Vector<Variant> binds;
+			int unbinds = 0;
+			Callable base_callable;
+
+			if (c.callable.is_custom()) {
+				CallableCustomBind *ccb = dynamic_cast<CallableCustomBind *>(c.callable.get_custom());
+				if (ccb) {
+					binds = ccb->get_binds();
+					base_callable = ccb->get_callable();
+				}
+
+				CallableCustomUnbind *ccu = dynamic_cast<CallableCustomUnbind *>(c.callable.get_custom());
+				if (ccu) {
+					unbinds = ccu->get_unbinds();
+					base_callable = ccu->get_callable();
+				}
+			} else {
+				base_callable = c.callable;
+			}
+
 			//find if this connection already exists
 			Node *common_parent = target->find_common_parent_with(p_node);
 
@@ -677,7 +744,7 @@ Error SceneState::_parse_connections(Node *p_owner, Node *p_node, Map<StringName
 					NodePath signal_from = common_parent->get_path_to(p_node);
 					NodePath signal_to = common_parent->get_path_to(target);
 
-					if (ps->has_connection(signal_from, c.signal.get_name(), signal_to, c.callable.get_method())) {
+					if (ps->has_connection(signal_from, c.signal.get_name(), signal_to, base_callable.get_method())) {
 						exists = true;
 						break;
 					}
@@ -708,7 +775,7 @@ Error SceneState::_parse_connections(Node *p_owner, Node *p_node, Map<StringName
 
 							if (from_node >= 0 && to_node >= 0) {
 								//this one has state for this node, save
-								if (state->is_connection(from_node, c.signal.get_name(), to_node, c.callable.get_method())) {
+								if (state->is_connection(from_node, c.signal.get_name(), to_node, base_callable.get_method())) {
 									exists2 = true;
 									break;
 								}
@@ -726,7 +793,7 @@ Error SceneState::_parse_connections(Node *p_owner, Node *p_node, Map<StringName
 
 								if (from_node >= 0 && to_node >= 0) {
 									//this one has state for this node, save
-									if (state->is_connection(from_node, c.signal.get_name(), to_node, c.callable.get_method())) {
+									if (state->is_connection(from_node, c.signal.get_name(), to_node, base_callable.get_method())) {
 										exists2 = true;
 										break;
 									}
@@ -773,11 +840,15 @@ Error SceneState::_parse_connections(Node *p_owner, Node *p_node, Map<StringName
 			ConnectionData cd;
 			cd.from = src_id;
 			cd.to = target_id;
-			cd.method = _nm_get_string(c.callable.get_method(), name_map);
+			cd.method = _nm_get_string(base_callable.get_method(), name_map);
 			cd.signal = _nm_get_string(c.signal.get_name(), name_map);
 			cd.flags = c.flags;
-			for (int i = 0; i < c.binds.size(); i++) {
+			cd.unbinds = unbinds;
+			for (int i = 0; i < c.binds.size(); i++) { // TODO: This could be removed now.
 				cd.binds.push_back(_vm_get_variant(c.binds[i], variant_map));
+			}
+			for (int i = 0; i < binds.size(); i++) {
+				cd.binds.push_back(_vm_get_variant(binds[i], variant_map));
 			}
 			connections.push_back(cd);
 		}
@@ -1390,6 +1461,11 @@ int SceneState::get_connection_flags(int p_idx) const {
 	return connections[p_idx].flags;
 }
 
+int SceneState::get_connection_unbinds(int p_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, connections.size(), -1);
+	return connections[p_idx].unbinds;
+}
+
 Array SceneState::get_connection_binds(int p_idx) const {
 	ERR_FAIL_INDEX_V(p_idx, connections.size(), Array());
 	Array binds;
@@ -1494,7 +1570,7 @@ void SceneState::set_base_scene(int p_idx) {
 	base_scene_idx = p_idx;
 }
 
-void SceneState::add_connection(int p_from, int p_to, int p_signal, int p_method, int p_flags, const Vector<int> &p_binds) {
+void SceneState::add_connection(int p_from, int p_to, int p_signal, int p_method, int p_flags, int p_unbinds, const Vector<int> &p_binds) {
 	ERR_FAIL_INDEX(p_signal, names.size());
 	ERR_FAIL_INDEX(p_method, names.size());
 
@@ -1507,6 +1583,7 @@ void SceneState::add_connection(int p_from, int p_to, int p_signal, int p_method
 	c.signal = p_signal;
 	c.method = p_method;
 	c.flags = p_flags;
+	c.unbinds = p_unbinds;
 	c.binds = p_binds;
 	connections.push_back(c);
 }
@@ -1549,6 +1626,7 @@ void SceneState::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_connection_method", "idx"), &SceneState::get_connection_method);
 	ClassDB::bind_method(D_METHOD("get_connection_flags", "idx"), &SceneState::get_connection_flags);
 	ClassDB::bind_method(D_METHOD("get_connection_binds", "idx"), &SceneState::get_connection_binds);
+	ClassDB::bind_method(D_METHOD("get_connection_unbinds", "idx"), &SceneState::get_connection_unbinds);
 
 	BIND_ENUM_CONSTANT(GEN_EDIT_STATE_DISABLED);
 	BIND_ENUM_CONSTANT(GEN_EDIT_STATE_INSTANCE);
@@ -1620,7 +1698,7 @@ void PackedScene::recreate_state() {
 #endif
 }
 
-Ref<SceneState> PackedScene::get_state() {
+Ref<SceneState> PackedScene::get_state() const {
 	return state;
 }
 

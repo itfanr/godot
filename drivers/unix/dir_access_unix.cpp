@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -49,7 +49,7 @@
 #include <mntent.h>
 #endif
 
-DirAccess *DirAccessUnix::create_fs() {
+Ref<DirAccess> DirAccessUnix::create_fs() {
 	return memnew(DirAccessUnix);
 }
 
@@ -138,9 +138,9 @@ uint64_t DirAccessUnix::get_modified_time(String p_file) {
 		return flags.st_mtime;
 	} else {
 		ERR_FAIL_V(0);
-	};
+	}
 	return 0;
-};
+}
 
 String DirAccessUnix::get_next() {
 	if (!dir_stream) {
@@ -320,11 +320,11 @@ Error DirAccessUnix::make_dir(String p_dir) {
 
 	if (success) {
 		return OK;
-	};
+	}
 
 	if (err == EEXIST) {
 		return ERR_ALREADY_EXISTS;
-	};
+	}
 
 	return ERR_CANT_CREATE;
 }
@@ -374,7 +374,7 @@ Error DirAccessUnix::change_dir(String p_dir) {
 	return OK;
 }
 
-String DirAccessUnix::get_current_dir(bool p_include_drive) {
+String DirAccessUnix::get_current_dir(bool p_include_drive) const {
 	String base = _get_root_path();
 	if (!base.is_empty()) {
 		String bd = current_dir.replace_first(base, "");
@@ -474,14 +474,14 @@ uint64_t DirAccessUnix::get_space_left() {
 	struct statvfs vfs;
 	if (statvfs(current_dir.utf8().get_data(), &vfs) != 0) {
 		return 0;
-	};
+	}
 
 	return (uint64_t)vfs.f_bavail * (uint64_t)vfs.f_frsize;
 #else
 	// FIXME: Implement this.
 	return 0;
 #endif
-};
+}
 
 String DirAccessUnix::get_filesystem_type() const {
 	return ""; //TODO this should be implemented

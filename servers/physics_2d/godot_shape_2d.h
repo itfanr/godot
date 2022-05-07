@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2021 Godot Engine contributors (cf. AUTHORS.md).   */
+/* Copyright (c) 2007-2022 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2022 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -134,7 +134,7 @@ public:
 		real_t mina, maxa;                                                                                                                                          \
 		real_t minb, maxb;                                                                                                                                          \
 		Transform2D ofsb = p_transform;                                                                                                                             \
-		ofsb.elements[2] += p_cast;                                                                                                                                 \
+		ofsb.columns[2] += p_cast;                                                                                                                                  \
 		project_range(p_normal, p_transform, mina, maxa);                                                                                                           \
 		project_range(p_normal, ofsb, minb, maxb);                                                                                                                  \
 		r_min = MIN(mina, minb);                                                                                                                                    \
